@@ -20,6 +20,7 @@ import CoverCropModal from './components/CoverCropModal'
 import BlacklistModal from './components/BlacklistModal'
 import FolderPickerModal from './components/FolderPickerModal'
 import LibraryModal from './components/LibraryModal'
+import ColumnSettingsModal from './components/ColumnSettingsModal'
 import { INITIAL_AI, INITIAL_MODES } from './data'
 import {
   fetchPlugins,
@@ -30,6 +31,7 @@ import {
 } from './api'
 import { native, registerFolderPicker } from './native'
 import { useThemePreference } from './ThemeRoot'
+import { normalizeHiddenColumns } from './tableColumns'
 import type {
   AIConfig,
   AIIdentifyResult,
@@ -193,6 +195,8 @@ export default function ScraperApp() {
   const [logHeight, setLogHeight] = useState(180)
   const [compact, setCompact] = useState(false)
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([])
+  const [columnsOpen, setColumnsOpen] = useState(false)
   const [organizeOpen, setOrganizeOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
@@ -560,6 +564,7 @@ export default function ScraperApp() {
         setLogHeight(settings.logHeight ?? 180)
         setThemePreference(settings.theme ?? 'system')
         setColumnWidths(settings.table?.widths ?? {})
+        setHiddenColumns(normalizeHiddenColumns(settings.table?.hidden))
         const savedBlacklist = normalizeBlacklist(settings.blacklist ?? [])
         blacklistRef.current = savedBlacklist
         setBlacklist(savedBlacklist)
@@ -672,7 +677,7 @@ export default function ScraperApp() {
         logOpen,
         logHeight,
         theme: themePreference,
-        table: { widths: columnWidths },
+        table: { widths: columnWidths, hidden: hiddenColumns },
         blacklist
       }
       native
@@ -691,6 +696,7 @@ export default function ScraperApp() {
     logHeight,
     themePreference,
     columnWidths,
+    hiddenColumns,
     blacklist,
     hydrated,
     nativeMode
@@ -1817,6 +1823,9 @@ export default function ScraperApp() {
       case 'compact':
         setCompact((value) => !value)
         break
+      case 'columns':
+        setColumnsOpen(true)
+        break
       case 'theme-light':
       case 'theme-dark':
       case 'theme-system': {
@@ -1866,6 +1875,7 @@ export default function ScraperApp() {
         setAiOpen(false)
         setBlacklistOpen(false)
         setLibraryOpen(false)
+        setColumnsOpen(false)
         setPluginSettingsOpen(false)
         return
       }
@@ -1944,6 +1954,7 @@ export default function ScraperApp() {
           scanFound={scan.found}
           columnWidths={columnWidths}
           onColumnWidthsChange={setColumnWidths}
+          hiddenColumns={hiddenColumns}
           onSelectedChange={setSelected}
           onPoster={openPoster}
           onRemove={removeRow}
@@ -2005,6 +2016,22 @@ export default function ScraperApp() {
         open={libraryOpen}
         onClose={() => setLibraryOpen(false)}
         onOpenItem={(item) => void openLibraryItem(item)}
+      />
+      <ColumnSettingsModal
+        open={columnsOpen}
+        hidden={hiddenColumns}
+        codeLabel={mode.codeLabel}
+        titleLabel={mode.titleLabel}
+        onCancel={() => setColumnsOpen(false)}
+        onSave={(next) => {
+          setHiddenColumns(normalizeHiddenColumns(next))
+          setColumnsOpen(false)
+          pushLog(
+            'info',
+            next.length ? `已隐藏 ${next.length} 列` : '已显示全部列'
+          )
+          message.success(next.length ? `已隐藏 ${next.length} 列` : '已显示全部列')
+        }}
       />
       <PluginSettingsModal
         open={pluginSettingsOpen}

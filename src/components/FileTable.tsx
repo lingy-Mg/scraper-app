@@ -3,6 +3,7 @@ import { Button, Spin, Table, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Key, MouseEvent as ReactMouseEvent, ThHTMLAttributes } from 'react'
 import type { ModeConfig, Row, RowStatus } from '../types'
+import { DEFAULT_COLUMN_WIDTHS } from '../tableColumns'
 import { fmtDur, fmtSize } from '../utils'
 
 const POSTER_BG = [
@@ -19,22 +20,6 @@ const STATUS: Record<RowStatus, { label: string; color: string }> = {
   waiting: { label: '等待', color: 'var(--muted)' },
   error: { label: '失败', color: 'var(--red)' },
   review: { label: '待选择', color: 'var(--purple)' }
-}
-
-/** 与 src/App.tsx 的列设置 key 保持一致；双击恢复这里的默认值。 */
-export const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
-  status: 88,
-  poster: 46,
-  code: 118,
-  file: 220,
-  title: 260,
-  maker: 120,
-  actors: 140,
-  dur: 116,
-  size: 94,
-  src: 66,
-  progress: 104,
-  act: 88
 }
 
 const MIN_COLUMN_WIDTH = 40
@@ -82,6 +67,8 @@ interface Props {
   /** 已持久化的列宽；缺省列使用 DEFAULT_COLUMN_WIDTHS。 */
   columnWidths: Record<string, number>
   onColumnWidthsChange: (widths: Record<string, number>) => void
+  /** 被隐藏的数据列 key；操作 / 选择列不受影响。 */
+  hiddenColumns: string[]
   onSelectedChange: (keys: Key[]) => void
   onPoster: (row: Row) => void
   onRemove: (row: Row) => void
@@ -101,6 +88,7 @@ export default function FileTable({
   scanFound = 0,
   columnWidths,
   onColumnWidthsChange,
+  hiddenColumns,
   onSelectedChange,
   onPoster,
   onRemove,
@@ -162,7 +150,7 @@ export default function FileTable({
 
   const muted = { fontSize: 11, color: 'var(--muted)' }
 
-  const columns: ColumnsType<Row> = [
+  const allColumns: ColumnsType<Row> = [
     {
       title: '状态',
       dataIndex: 'status',
@@ -359,6 +347,10 @@ export default function FileTable({
         )
     }
   ]
+
+  // 只过滤数据列；rowSelection 与「操作」列始终保留。
+  const hidden = new Set(hiddenColumns)
+  const columns = allColumns.filter((column) => !hidden.has(String(column.key)))
 
   const totalWidth =
     columns.reduce((sum, column) => sum + Number(column.width ?? 0), 0) + 34

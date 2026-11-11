@@ -302,6 +302,23 @@ button {
   padding-bottom: 4px !important;
   white-space: nowrap;
 }
+/* 列设置弹窗 */
+.col-settings-hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-bottom: 10px;
+}
+.col-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.col-settings-group .ant-checkbox-wrapper {
+  margin-inline-start: 0;
+  font-size: 12px;
+}
+
 /* 列宽拖动手柄：贴在表头右边界，双击恢复默认宽度。 */
 .col-resize {
   position: absolute;

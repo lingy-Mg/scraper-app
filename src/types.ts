@@ -3,9 +3,11 @@ export type ModeKey = 'av' | 'movie' | 'tv' | 'anime'
 /** 主题偏好：跟随系统时由浏览器 `prefers-color-scheme` 决定实际主题。 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
-/** 表格列宽持久化；键为列 key。 */
+/** 表格列宽与列显隐持久化；键为列 key。 */
 export interface TableSettings {
   widths?: Record<string, number>
+  /** 被隐藏的数据列 key；「操作」「选择」列不允许出现在这里。 */
+  hidden?: string[]
 }
 
 export type RowStatus = 'done' | 'unmatched' | 'running' | 'waiting' | 'error' | 'review'

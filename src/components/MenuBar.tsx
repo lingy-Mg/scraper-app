@@ -47,6 +47,7 @@ const buildItems = (
       children: [
         { key: 'log', label: '显示 / 隐藏日志' },
         { key: 'compact', label: '紧凑模式' },
+        { key: 'columns', label: '列设置…' },
         { type: 'divider' },
         {
           key: 'theme',

@@ -39,9 +39,25 @@ export const TABLE_WIDTH_KEYS = [
   'act'
 ] as const
 
-/** 表格列宽持久化；单位像素，读取时裁剪到合理区间。 */
+/** 允许隐藏的数据列；「操作」与「选择」列永不在此列表中。 */
+export const TABLE_HIDEABLE_KEYS = [
+  'status',
+  'poster',
+  'code',
+  'file',
+  'title',
+  'maker',
+  'actors',
+  'dur',
+  'size',
+  'src',
+  'progress'
+] as const
+
+/** 表格列宽 / 列显隐持久化；宽度单位像素，读取时裁剪到合理区间。 */
 export interface TableSettings {
   widths?: Record<string, number>
+  hidden?: string[]
 }
 
 const MIN_COLUMN_WIDTH = 40
@@ -132,7 +148,7 @@ export function defaultSettings(): Settings {
     logOpen: true,
     logHeight: 180,
     theme: 'system',
-    table: { widths: {} },
+    table: { widths: {}, hidden: [] },
     blacklist: []
   }
 }
@@ -151,9 +167,15 @@ export function normalizeTheme(value: unknown): ThemePreference {
 /** 兼容旧设置：忽略未知列与非法宽度，并把数值限制在 40–1200。 */
 export function normalizeTable(
   value: unknown,
-  fallback: TableSettings = { widths: {} }
+  fallback: TableSettings = { widths: {}, hidden: [] }
 ): TableSettings {
-  if (!isRecord(value)) return { ...fallback, widths: { ...(fallback.widths ?? {}) } }
+  if (!isRecord(value)) {
+    return {
+      widths: { ...(fallback.widths ?? {}) },
+      hidden: [...(fallback.hidden ?? [])]
+    }
+  }
+
   const widths: Record<string, number> = {}
   if (isRecord(value.widths)) {
     for (const key of TABLE_WIDTH_KEYS) {
@@ -162,7 +184,20 @@ export function normalizeTable(
       widths[key] = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(raw)))
     }
   }
-  return { ...fallback, widths }
+
+  // hidden 只接受可隐藏的数据列；固定列与未知 key 一律丢弃并去重。
+  const hidden: string[] = []
+  const allowed = new Set<string>(TABLE_HIDEABLE_KEYS)
+  const seen = new Set<string>()
+  if (Array.isArray(value.hidden)) {
+    for (const entry of value.hidden) {
+      if (typeof entry !== 'string' || !allowed.has(entry) || seen.has(entry)) continue
+      seen.add(entry)
+      hidden.push(entry)
+    }
+  }
+
+  return { ...fallback, widths, hidden }
 }
 
 /** 兼容旧设置：缺失/损坏的 sources 一律回退为空数组，并去重。 */
