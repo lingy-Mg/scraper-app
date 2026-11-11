@@ -176,7 +176,12 @@ function parseTable(value: unknown): TableSettings {
       fail('table.hidden 必须是字符串数组')
     }
   }
-  return normalizeTable(value)
+  const normalized = normalizeTable(value)
+  const table: TableSettings = {}
+  // 保留「字段未提供」语义，导入合并时才能沿用本机 hidden/widths。
+  if ('widths' in value) table.widths = normalized.widths
+  if ('hidden' in value) table.hidden = normalized.hidden
+  return table
 }
 
 function parseTheme(value: unknown): ThemePreference {
