@@ -15,6 +15,11 @@ data/
 # 项目内临时目录（check 的 TEMP/TMP 指向这里，规避系统 TEMP 权限问题）
 .tmp/
 
+# Playwright 端到端测试产物（失败截图 / trace / HTML 报告）
+test-results/
+playwright-report/
+blob-report/
+
 # 密钥与本地配置
 .env
 .env.*
