@@ -6,9 +6,13 @@ import { pathToFileURL } from 'node:url'
 import { watch } from 'node:fs'
 
 export const PLUGIN_ROOT = join(import.meta.dir, 'plugins')
+/** 用户插件目录（gitignore）；同 id 时覆盖内置插件。 */
+export const USER_PLUGIN_ROOT = join(import.meta.dir, 'data', 'plugins')
 const DATA_DIR = join(import.meta.dir, 'data')
 const CONFIG_FILE = join(DATA_DIR, 'config.json')
 const CACHE_DIR = join(DATA_DIR, '.plugin-cache')
+
+export type PluginSource = 'builtin' | 'user'
 
 /** 插件打包后无法用相对路径定位运行时数据，统一由宿主通过环境变量注入。 */
 process.env.SCRAPER_DATA_DIR ??= DATA_DIR
@@ -47,6 +51,9 @@ export interface LoadedPlugin {
   config: PluginConfig
   impl: any
   capabilities: string[]
+  source: PluginSource
+  /** 插件实际所在目录（用户插件可能覆盖内置插件）。 */
+  dir: string
   status: 'ok' | 'error'
   error?: string
   loadedAt: number
@@ -107,13 +114,19 @@ async function collectFiles(dir: string, prefix = ''): Promise<string[]> {
 
 /**
  * 目录内容指纹：文件名 + mtime + size。任一文件变化都会换新打包产物。
- * 统一按插件根目录计算，`_shared/` 与跨插件引用的改动也能触发重建。
+ * 同时覆盖内置与用户插件根目录，`_shared/` 与跨插件引用的改动也能触发重建。
  */
-async function treeHash(root: string, files: string[]): Promise<string> {
+async function pluginHash(): Promise<string> {
   const hash = createHash('sha1')
-  for (const rel of files) {
-    const info = await stat(join(root, rel))
-    hash.update(`${rel}:${info.mtimeMs}:${info.size}\n`)
+  for (const [label, root] of [
+    ['builtin', PLUGIN_ROOT],
+    ['user', USER_PLUGIN_ROOT]
+  ] as const) {
+    if (!existsSync(root)) continue
+    for (const rel of await collectFiles(root)) {
+      const info = await stat(join(root, rel))
+      hash.update(`${label}/${rel}:${info.mtimeMs}:${info.size}\n`)
+    }
   }
   return hash.digest('hex').slice(0, 12)
 }
@@ -122,9 +135,15 @@ async function treeHash(root: string, files: string[]): Promise<string> {
  * 把插件目录打包成单个 ESM 再加载：
  * 入口 import 的本地模块会一起进入产物，改目录内任意 .ts 都能热重载。
  */
-async function bundlePlugin(id: string, dir: string, entry: string): Promise<string> {
-  const hash = await treeHash(PLUGIN_ROOT, await collectFiles(PLUGIN_ROOT))
-  const base = `${id}-${hash}`
+async function bundlePlugin(
+  id: string,
+  source: PluginSource,
+  dir: string,
+  entry: string
+): Promise<string> {
+  const hash = await pluginHash()
+  // 同名内置/用户插件必须使用不同缓存文件，否则会加载到错误的实现。
+  const base = `${id}-${source}-${hash}`
   const outfile = join(CACHE_DIR, `${base}.mjs`)
   if (existsSync(outfile)) return outfile
 
@@ -151,8 +170,23 @@ async function bundlePlugin(id: string, dir: string, entry: string): Promise<str
   return output.path
 }
 
-async function loadOne(id: string): Promise<LoadedPlugin> {
-  const dir = join(PLUGIN_ROOT, id)
+/** 用户目录优先；不存在时回退内置目录。 */
+function findPluginDir(id: string): { dir: string; source: PluginSource } | null {
+  const user = join(USER_PLUGIN_ROOT, id)
+  if (existsSync(join(user, 'plugin.json'))) return { dir: user, source: 'user' }
+  const builtin = join(PLUGIN_ROOT, id)
+  if (existsSync(join(builtin, 'plugin.json'))) return { dir: builtin, source: 'builtin' }
+  return null
+}
+
+async function loadOne(
+  id: string,
+  location?: { dir: string; source: PluginSource }
+): Promise<LoadedPlugin> {
+  const { dir, source } = location ?? findPluginDir(id) ?? {
+    dir: join(PLUGIN_ROOT, id),
+    source: 'builtin' as const
+  }
   try {
     const manifest = JSON.parse(await readFile(join(dir, 'plugin.json'), 'utf8')) as PluginManifest
     if (manifest.apiVersion !== 1) throw new Error('apiVersion 必须为 1')
@@ -160,7 +194,7 @@ async function loadOne(id: string): Promise<LoadedPlugin> {
     if (!manifest.labels?.code || !manifest.labels?.title) throw new Error('缺少 labels')
 
     const entry = join(dir, manifest.entry ?? 'index.ts')
-    const bundled = await bundlePlugin(id, dir, entry)
+    const bundled = await bundlePlugin(id, source, dir, entry)
     const mod = await import(`${pathToFileURL(bundled).href}?v=${++generation}`)
     const impl = mod.default ?? mod
     const config: PluginConfig = {
@@ -173,6 +207,8 @@ async function loadOne(id: string): Promise<LoadedPlugin> {
       config,
       impl,
       capabilities: capabilitiesOf(manifest),
+      source,
+      dir,
       status: 'ok',
       loadedAt: Date.now()
     }
@@ -191,6 +227,8 @@ async function loadOne(id: string): Promise<LoadedPlugin> {
       config: { ...fallbackDefaults, ...(overrides.get(id) ?? {}) },
       impl: null,
       capabilities: [...DEFAULT_CAPABILITIES],
+      source,
+      dir,
       status: 'error',
       error: String(error),
       loadedAt: Date.now()
@@ -202,11 +240,18 @@ async function loadOne(id: string): Promise<LoadedPlugin> {
 
 export async function loadAll() {
   plugins.clear()
-  const entries = await readdir(PLUGIN_ROOT, { withFileTypes: true })
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    if (entry.name.startsWith('_')) continue
-    await loadOne(entry.name)
+  // 先内置、后用户：同 id 由用户目录覆盖。
+  for (const [root, source] of [
+    [PLUGIN_ROOT, 'builtin'],
+    [USER_PLUGIN_ROOT, 'user']
+  ] as const) {
+    if (!existsSync(root)) continue
+    const entries = await readdir(root, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      if (entry.name.startsWith('_')) continue
+      await loadOne(entry.name, { dir: join(root, entry.name), source })
+    }
   }
 }
 
@@ -230,7 +275,7 @@ export async function updateConfig(id: string, patch: Partial<PluginConfig>) {
 }
 
 export async function reload(id: string) {
-  const plugin = await loadOne(id)
+  const plugin = await loadOne(id, findPluginDir(id) ?? undefined)
   reloadListener?.(id)
   return plugin
 }
@@ -242,23 +287,26 @@ export async function reloadAll() {
 
 let watchTimer: ReturnType<typeof setTimeout> | null = null
 export function watchPlugins() {
-  watch(PLUGIN_ROOT, { recursive: true }, (_event, filename) => {
-    if (!filename) return
-    const id = String(filename).split(/[\\/]/)[0]
-    if (!id) return
-    // `_shared` 被多个插件引用：任一变动都重新加载所有插件。
-    const shared = id.startsWith('_')
-    if (!shared && !existsSync(join(PLUGIN_ROOT, id))) return
-    if (watchTimer) clearTimeout(watchTimer)
-    watchTimer = setTimeout(async () => {
-      if (shared) {
-        await reloadAll()
-        console.log('[plugin] reloaded all (shared)')
-        return
-      }
-      await loadOne(id)
-      reloadListener?.(id)
-      console.log(`[plugin] reloaded ${id}`)
-    }, 320)
-  })
+  for (const root of [PLUGIN_ROOT, USER_PLUGIN_ROOT]) {
+    if (!existsSync(root)) continue
+    watch(root, { recursive: true }, (_event, filename) => {
+      if (!filename) return
+      const id = String(filename).split(/[\\/]/)[0]
+      if (!id) return
+      // `_shared` 被多个插件引用：任一变动都重新加载所有插件。
+      const shared = id.startsWith('_')
+      if (!shared && !findPluginDir(id)) return
+      if (watchTimer) clearTimeout(watchTimer)
+      watchTimer = setTimeout(async () => {
+        if (shared) {
+          await reloadAll()
+          console.log('[plugin] reloaded all (shared)')
+          return
+        }
+        await loadOne(id, findPluginDir(id) ?? undefined)
+        reloadListener?.(id)
+        console.log(`[plugin] reloaded ${id}`)
+      }, 320)
+    })
+  }
 }

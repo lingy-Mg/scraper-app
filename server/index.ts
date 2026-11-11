@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import {
   PLUGIN_ROOT,
+  USER_PLUGIN_ROOT,
   getPlugin,
   getPlugins,
   loadAll,
@@ -212,6 +213,7 @@ function serialize(id: string, origin: string) {
     status: plugin.status,
     error: plugin.error ?? '',
     capabilities: plugin.capabilities,
+    source: plugin.source,
     codeLabel: m.labels.code,
     titleLabel: m.labels.title,
     settingsUrl: `${origin}/plugins/${m.id}/settings/`,
@@ -735,18 +737,30 @@ async function handleApi(req: Request, url: URL) {
 async function servePluginAsset(url: URL) {
   let rel = decodeURIComponent(url.pathname.replace(/^\/plugins\//, ''))
   if (rel.endsWith('/')) rel += 'index.html'
-  const full = normalize(join(PLUGIN_ROOT, rel))
-  if (full !== PLUGIN_ROOT && !full.startsWith(PLUGIN_ROOT + sep)) {
-    return new Response('forbidden', { status: 403 })
-  }
 
-  let file = Bun.file(full)
-  if (!(await file.exists()) && rel.endsWith('/settings/index.html')) {
-    // 插件未自带设置页时使用共享模板
-    file = Bun.file(join(PLUGIN_ROOT, '_shared', 'settings.html'))
+  // 用户插件目录优先，随后内置目录。
+  let forbidden = false
+  for (const root of [USER_PLUGIN_ROOT, PLUGIN_ROOT]) {
+    const full = normalize(join(root, rel))
+    if (full !== root && !full.startsWith(root + sep)) {
+      forbidden = true
+      continue
+    }
+    const file = Bun.file(full)
+    if (await file.exists()) {
+      return new Response(file, { headers: { 'cache-control': 'no-store' } })
+    }
   }
-  if (!(await file.exists())) return new Response('not found', { status: 404 })
-  return new Response(file, { headers: { 'cache-control': 'no-store' } })
+  if (forbidden) return new Response('forbidden', { status: 403 })
+
+  if (rel.endsWith('/settings/index.html')) {
+    // 插件未自带设置页时使用共享模板
+    const shared = Bun.file(join(PLUGIN_ROOT, '_shared', 'settings.html'))
+    if (await shared.exists()) {
+      return new Response(shared, { headers: { 'cache-control': 'no-store' } })
+    }
+  }
+  return new Response('not found', { status: 404 })
 }
 
 /** 托管 dist：静态文件优先，未知路径回退 index.html（SPA）。 */

@@ -6,6 +6,8 @@ export interface PluginMode {
   description: string
   status: 'ok' | 'error'
   error?: string
+  capabilities?: string[]
+  source?: 'builtin' | 'user'
   codeLabel: string
   titleLabel: string
   lang: string
