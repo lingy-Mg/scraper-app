@@ -78,9 +78,10 @@
 
 - [x] 深色主题：浅色/深色/跟随系统，`Settings.theme` 持久化；CSS 变量适配日志、表格、弹窗、滚动条
 - [x] 表格列宽可调/列显隐：拖动表头调宽、双击恢复默认；`Settings.table.widths/hidden` 持久化，操作/选择列不可隐藏
-- [ ] 任务队列暂停/取消（下一轮）
+- [x] 批量刮削 / 整理任务队列：`src/taskQueue.ts` 并发 3（整理逐条、并发 2），支持暂停 / 继续 / 取消；刮削与整理请求携带 `AbortSignal`，取消会真正中断在途 HTTP 请求，已完成结果与媒体库记录不回滚，未开始行恢复待处理
+- [x] 任务状态可见：任务控制条显示「已完成/总数（失败 N）」与暂停 / 继续 / 取消；整理弹窗额外展示失败/取消计数
 - [x] 设置导入导出：`GET /api/settings/export`（默认脱敏，`includeSecrets=1` 才含密钥）与 `POST /api/settings/import`（严格校验、400 不落盘）；插件 `data/config.json` 不参与
-- 验证：`bun test`（82 用例）、`bun run smoke`（12 项）、`bun run check`；真实库只读查询总数 127 保持不变
+- 验证：`bun test`（92 用例，含任务队列 10 例）、`bun run smoke`（12 项）、`bun run check`（4/4）；真实库只读查询总数 127 保持不变
 
 ## 不建议做
 

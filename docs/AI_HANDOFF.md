@@ -46,11 +46,12 @@
 src/
   App.tsx                     # 状态、流程、弹窗、媒体库同步、快捷键
   native.ts                   # 同源 HTTP 封装（唯一后端通道）
+  taskQueue.ts                # 通用任务队列：并发 / 暂停 / 继续 / 取消（AbortController）
   utils.ts                    # fmtDur/fmtSize/NFO/行转换/短片判定
   types.ts                    # 全部 DTO 与 Settings
   components/
     TitleBar/MenuBar/Toolbar/ModeBar/FilterBar/FileTable
-    StatusBar/LogPanel/OrganizeModal/ConfigModal/AIConfigModal
+    StatusBar/TaskControlBar/LogPanel/OrganizeModal/ConfigModal/AIConfigModal
     CandidateModal/PosterModal/PluginSettingsModal
     MagnetList                # 磁力列表 + 复制 / 手动复制降级
     FolderPickerModal         # 网页内目录选择
@@ -245,6 +246,13 @@ CREATE TABLE items (
 - **清理短片**：自定义 Modal，列出文件名/时长/大小，支持全选与单行勾选
 - **日志**：默认 `logOpen=true`；`LogPanel` 顶部 5px 手柄，拖动改 `logHeight`，持久化
 - **模式隔离**：`startScrape` 只处理 `row.mode === 当前模式` 或空模式的行
+- **任务队列（刮削 / 整理）**：`src/taskQueue.ts` 统一调度，`TaskControlBar` 展示已完成/总数（失败 N）与暂停/继续/取消。
+  - 状态：`idle | running | paused | cancelled | done`；进度 `{ total, done, failed, running, state }`。
+  - `pause()` 只停止派发新任务，**在途任务继续跑完**；`resume()` 继续派发剩余任务。
+  - `cancel()` 不再派发，并对所有在途任务调用 `AbortController.abort()`；请求层 `fetch({ signal })` 真中断。已完成结果、行状态与媒体库记录**不回滚**；未开始行恢复 `unmatched`，已有候选的 review 行保留候选。
+  - 取消中断的任务既不计 `done` 也不计 `failed`；单任务抛错或 `isFailure` 命中只增加 `failed`，队列继续执行其它任务。
+  - 刮削并发 3，任务列表 = 待处理行 + 已有候选待 AI 选择行；扫描进行中仍禁用刮削。
+  - 整理**逐条提交**（并发 2），每条独立 `/api/organize` 请求；路径越界校验、冲突策略、字幕/NFO/封面/预告片开关仍由后端按原逻辑处理。整理弹窗汇总成功/跳过/失败/取消计数，运行中提供暂停/继续/取消。
 - **识别优先级**：电影/电视剧/动漫 → 原生 provider；AV/JavDB → Bun 插件 → 原生 JavDB → AI
 - **NFO/封面**：整理时读取模式 `downloads` 配置；失败只写 warning，不影响主文件
 - **扫描进度**：扫描分 `walk`（枚举）→ `probe`（读时长）两阶段；走 `/api/scan` 的 NDJSON 流；`src/components/ScanProgressBar.tsx` 显示进度与当前位置，`App.tsx` 每 200ms 批量把 `files` 合并进表格；扫描期间暂停媒体库落库
@@ -258,7 +266,7 @@ CREATE TABLE items (
 自动化（不联网、不读写项目 `data/`）：
 
 ```powershell
-bun test          # 82 个用例：扫描/整理/媒体库（查询/重复/统计）/来源/插件/文件浏览/JavDB 令牌/设置兼容与导入导出
+bun test          # 92 个用例：扫描/整理/媒体库（查询/重复/统计）/来源/插件/文件浏览/JavDB 令牌/设置兼容与导入导出/任务队列
 bun run smoke     # 12 项 HTTP 端到端：扫描 → 探测 → 媒体库 → 查询/重复/统计 → 来源 → 设置导出脱敏/导入 → 整理+NFO → 回收站
 bun run check     # 一键：tsc --noEmit → bun build → bun test → npm run build，任一步失败退出 1
 ```
@@ -284,6 +292,8 @@ bun run check     # 一键：tsc --noEmit → bun build → bun test → npm run
 7. 整理后检查 `.nfo` + `.jpg`。
 8. 重载页面，确认媒体库记录与模式恢复。
 9. 选一个大目录（数百个视频）：立刻出现进度条与当前文件，行数持续增长；进度到 100% 后表格排序稳定。
+9.1 批量刮削时点「暂停」：不再开始新文件，状态显示已暂停；点「继续」后剩余文件继续刮削。点「取消」后轮询请求被中断，已完成行保留结果，未开始行回到待处理，媒体库中已完成记录仍在。
+9.2 整理时暂停/取消：已完成条目保留在目标目录且行路径已更新；未开始条目不动；整理弹窗汇总显示成功/跳过/失败/取消计数。
 10. 右键任意行「拉黑此文件名」：该行立即隐藏；`文件 → 文件名黑名单…` 里确认规则；重新扫描时该文件不再出现；媒体库记录会在下次 replace 扫描时清理。
 11. 打开一个 JavDB / AV 已匹配行的详情：应加载磁力列表；未填令牌时显示「JavDB 需要登录：请在 JavDB 插件设置中填写访问令牌」，而不是「暂无磁力数据」。
 12. 在插件设置填写令牌后重启：`GET /api/plugins/javdb/config` 的 `token` 应为 `••••••••`；`data/config.json` 中保存明文（仅本机）。
