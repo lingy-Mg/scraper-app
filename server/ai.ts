@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_AI, type AIConfig } from './settings'
+import { DATA_DIR, DEFAULT_AI, type AIConfig } from './settings'
 
 export interface Candidate {
   id: string
@@ -118,7 +118,7 @@ function isOpencode(config: AIConfig): boolean {
   return config.provider.trim().toLowerCase() === 'opencode cli'
 }
 
-const RUNNER_DIR = join(import.meta.dir, 'data', 'opencode-runner')
+const RUNNER_DIR = join(DATA_DIR, 'opencode-runner')
 
 const OPENCODE_AGENT = `---
 description: Return only the requested result

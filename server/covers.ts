@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { cropImage, decodeCover, type ImageFormat } from './image'
+import { DATA_DIR } from './settings'
 
-const COVER_DIR = join(import.meta.dir, 'data', 'covers')
+const COVER_DIR = join(DATA_DIR, 'covers')
 const EXTENSIONS = ['jpg', 'png', 'gif', 'webp', 'avif', 'heic'] as const
 const MIME: Record<ImageFormat['ext'], string> = {
   jpg: 'image/jpeg',

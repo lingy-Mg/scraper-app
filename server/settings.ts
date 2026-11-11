@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 export interface AIConfig {
   enabled: boolean
@@ -56,7 +56,17 @@ export const DEFAULT_AI: AIConfig = {
 文件名：{filename}`
 }
 
-export const DATA_DIR = join(import.meta.dir, 'data')
+/**
+ * 运行时数据目录的唯一来源。
+ * 测试 / 多实例可通过 `SCRAPER_DATA_DIR` 注入隔离目录；默认保持
+ * `server/data`，对现有用户行为完全不变。
+ */
+export function resolveDataDir(): string {
+  const injected = process.env.SCRAPER_DATA_DIR?.trim()
+  return injected ? resolve(injected) : join(import.meta.dir, 'data')
+}
+
+export const DATA_DIR = resolveDataDir()
 export const SETTINGS_FILE = join(DATA_DIR, 'settings.json')
 
 export function defaultSettings(): Settings {

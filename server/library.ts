@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { DATA_DIR } from './settings'
 
 /** 媒体库条目，字段与 docs/providers-library-contract.md 一致。 */
 export interface LibraryItem {
@@ -28,7 +29,6 @@ export interface LibraryItem {
   updatedAt?: number
 }
 
-export const DATA_DIR = join(import.meta.dir, 'data')
 export const DB_FILE = join(DATA_DIR, 'library.db')
 
 const SCHEMA = `

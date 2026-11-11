@@ -4,18 +4,18 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { watch } from 'node:fs'
+import { DATA_DIR } from './settings'
 
 export const PLUGIN_ROOT = join(import.meta.dir, 'plugins')
 /** 用户插件目录（gitignore）；同 id 时覆盖内置插件。 */
-export const USER_PLUGIN_ROOT = join(import.meta.dir, 'data', 'plugins')
-const DATA_DIR = join(import.meta.dir, 'data')
+export const USER_PLUGIN_ROOT = join(DATA_DIR, 'plugins')
 const CONFIG_FILE = join(DATA_DIR, 'config.json')
 const CACHE_DIR = join(DATA_DIR, '.plugin-cache')
 
 export type PluginSource = 'builtin' | 'user'
 
-/** 插件打包后无法用相对路径定位运行时数据，统一由宿主通过环境变量注入。 */
-process.env.SCRAPER_DATA_DIR ??= DATA_DIR
+/** 插件打包后无法用相对路径定位运行时数据，统一由宿主注入绝对路径。 */
+process.env.SCRAPER_DATA_DIR = DATA_DIR
 
 export interface SourceOpt {
   label: string
