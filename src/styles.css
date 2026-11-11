@@ -51,7 +51,6 @@ button {
   padding-left: 12px;
   background: var(--chrome);
   border-bottom: 1px solid var(--line);
-  -webkit-app-region: drag;
   user-select: none;
 }
 .appicon {
@@ -74,31 +73,6 @@ button {
   color: var(--muted-2);
   margin-left: 2px;
 }
-.win-controls {
-  margin-left: auto;
-  display: flex;
-  height: 100%;
-  -webkit-app-region: no-drag;
-}
-.wc {
-  width: 46px;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  border: 0;
-  background: none;
-  color: #444b55;
-  font-size: 11px;
-  cursor: default;
-}
-.wc:hover {
-  background: var(--chrome-2);
-}
-.wc.close:hover {
-  background: #e81123;
-  color: #fff;
-}
-
 /* menu bar */
 .menubar {
   height: 28px;

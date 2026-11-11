@@ -190,9 +190,6 @@ export interface NativeBridge {
   bangumiDetail(id: string, token?: string): Promise<Record<string, unknown>>
   openPath(path: string): Promise<void>
   revealPath(path: string): Promise<void>
-  minimize(): Promise<void>
-  toggleMaximize(): Promise<void>
-  close(): Promise<void>
 }
 
 /**
@@ -326,17 +323,5 @@ export const native: NativeBridge = {
 
   async revealPath(path) {
     await http<{ ok: true }>('/api/reveal', { body: { path } })
-  },
-
-  async minimize() {
-    // 浏览器中没有窗口最小化权限。
-  },
-
-  async toggleMaximize() {
-    // 浏览器中没有窗口最大化权限。
-  },
-
-  async close() {
-    // 浏览器标签页不允许脚本关闭。
   }
 }

@@ -1479,23 +1479,6 @@ export default function ScraperApp() {
     }
   }
 
-  const handleMinimize = () => {
-    void native.minimize().catch((error) => pushLog('warn', `最小化失败：${errText(error)}`))
-  }
-
-  const handleMaximize = () => {
-    void native
-      .toggleMaximize()
-      .catch((error) => pushLog('warn', `切换最大化失败：${errText(error)}`))
-  }
-
-  const handleClose = () => {
-    void native.close().catch((error) => {
-      pushLog('warn', `关闭失败：${errText(error)}`)
-      message.warning(errText(error))
-    })
-  }
-
   const startLogResize = (event: React.MouseEvent) => {
     event.preventDefault()
     const startY = event.clientY
@@ -1621,7 +1604,7 @@ export default function ScraperApp() {
         setCompact((value) => !value)
         break
       case 'quit':
-        handleClose()
+        message.info('当前运行在浏览器中，请直接关闭标签页')
         break
       case 'clearLibrary':
         confirmClearLibrary()
@@ -1678,13 +1661,7 @@ export default function ScraperApp() {
 
   return (
     <div className="app">
-      <TitleBar
-        subtitle={folder ? baseName(folder) : '未选择目录'}
-        showControls={false}
-        onMinimize={handleMinimize}
-        onMaximize={handleMaximize}
-        onClose={handleClose}
-      />
+      <TitleBar subtitle={folder ? baseName(folder) : '未选择目录'} />
       <MenuBar onAction={handleMenu} />
       <Toolbar
         path={folder}
