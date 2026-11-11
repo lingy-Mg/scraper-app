@@ -106,6 +106,10 @@ export interface ProviderCandidate {
 
 export interface ProviderDetail extends ProviderCandidate {
   tags?: string[]
+  /** 官方预告片完整 URL（当前仅 TMDB，YouTube watch URL）。 */
+  trailerUrl?: string
+  /** 预告片站点，例如 `YouTube`。 */
+  trailerSite?: string
   raw?: Record<string, unknown>
 }
 ```
@@ -151,6 +155,9 @@ export default makeTmdbPlugin('tv')
   - 其它 v3 key → query `api_key=<key>`
 - 搜索：`GET /search/movie`、`GET /search/tv`，参数 `query`、`language`、`include_adult=false`、`page=1`。
 - 详情：`GET /movie/{id}`、`GET /tv/{id}`，`append_to_response=credits`。
+- 预告片：详情成功后额外请求 `GET /movie/{id}/videos` / `GET /tv/{id}/videos`（按 mediaType），只取 `site=YouTube` 且 `key` 非空的视频；顺序为官方 Trailer → Trailer → 官方 Teaser → Teaser。
+  - 返回 `trailerUrl = https://www.youtube.com/watch?v=<key>`，`trailerSite = "YouTube"`。
+  - videos 请求失败只 `console.warn`，详情仍正常返回，不向调用方抛错。
 - 图片：`https://image.tmdb.org/t/p/w500` + `poster_path`。
 - 文件名清洗：去扩展名、`[...]`、`(...)`、`._`，去掉分辨率/编码/来源词（`1080p`、`2160p`、`BluRay`、`WEB-DL`、`x264`、`x265`、`HDR`、`DTS`、`AAC` 等），提取 4 位年份。
 - 优先用去掉年份后的标题搜索；无结果再用完整清洗名。

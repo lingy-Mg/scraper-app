@@ -31,11 +31,16 @@
 - [x] 上游 JavDB 需登录，已支持令牌（插件设置 → 访问令牌；详见下方 2026-11-11 记录）
 - 注意：只做元数据展示与复制，不内置下载器、不调用下载接口
 
-### P2 预告片与字幕
+### P2 预告片与字幕（已完成）
 
-- TMDB `/movie/{id}/videos`、Bangumi 无预告片
-- 字幕需要 OpenSubtitles 或本地字幕目录扫描（先做本地匹配）
-- 验收：模式配置里的「预告片/字幕」开关真正生效；失败写 warning
+- [x] TMDB resolve 请求 `/movie/{id}/videos` / `/tv/{id}/videos`，只取 YouTube，优先官方 Trailer → Trailer → 官方 Teaser → Teaser；返回 `trailerUrl` / `trailerSite`。请求失败只写 warning，不影响详情。
+- [x] Bangumi / JavDB 无统一预告片字段：不返回、不报错。
+- [x] 本地字幕匹配 `POST /api/subtitles/find`：同目录 + 一层 `Subs` / `subs` / `字幕`；支持同名与语言后缀（`.zh.srt` / `.chs.ass` / `.en.vtt` 等），拒绝相对路径。
+- [x] 详情弹窗：有 `trailerUrl` 时显示「预告片」按钮（新窗口，不内嵌播放器）；显示匹配字幕文件名 + 语言 + 格式；失败只提示。
+- [x] 整理按模式 `downloads` 生效：字幕开启时复制到目标视频旁（保留语言后缀、遵守冲突策略、只复制不删除）；字幕关闭不复制。
+- [x] NFO/封面开关关闭时不写对应 sidecar；预告片开启且 item 带 `trailerUrl` 时写 NFO `<trailer>`，不下载视频；背景图开启只写一条 warning。
+- 验证：`bun test`（57 用例，含字幕匹配与 TMDB 预告片 mock）、`bun run smoke`（8 项，含字幕开关与源文件保留）、`bun run check`。
+- 未覆盖 / 后续：OpenSubtitles 等在线字幕源；字幕编码转换/内容校验；多语言字幕优先级选择；背景图真实写入；JavDB `preview_video_url`（HLS）未作为预告片。
 
 ### P3 插件宿主增强（B/S 单端）
 

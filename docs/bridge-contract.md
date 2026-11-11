@@ -62,6 +62,13 @@ export interface OrganizeItem {
     width: number
     height: number
   }
+  trailerUrl?: string          // 可选：预告片 http(s) 地址；只写 NFO，不下载视频
+}
+
+/** 模式配置里的下载开关，由前端把当前模式的 `downloads` 原样传给整理接口。 */
+export interface DownloadOption {
+  label: string
+  on: boolean
 }
 
 export interface OrganizeRequest {
@@ -69,7 +76,19 @@ export interface OrganizeRequest {
   action: 'move' | 'copy'      // 默认 move
   conflict: 'skip' | 'overwrite' | 'rename'  // 默认 rename
   removeEmptyDirs?: boolean    // 默认 false
+  /**
+   * 当前模式的插件 downloads 配置（如 封面/背景图/预告片/NFO/字幕）。
+   * 省略时后端保持旧行为：不复制字幕、不注入预告片、不做开关裁剪。
+   */
+  downloads?: DownloadOption[]
   items: OrganizeItem[]
+}
+
+/** 本地字幕匹配结果（POST /api/subtitles/find）。 */
+export interface SubtitleInfo {
+  path: string                 // 绝对路径
+  format: string               // srt / ass / ssa / vtt
+  language?: string            // 从文件名提取：zh / chs / en …
 }
 
 export interface OrganizeResult {
@@ -204,6 +223,15 @@ export interface AIPickResult {
 - 单项失败不影响其他项。
 - `removeEmptyDirs`：整理结束后自底向上删除 `dest` 之外、且变空的**源目录**（只删除本次源文件所在目录，且不删除 `dest` 本身）。
 
+开关语义（`downloads` 由前端整理请求携带；省略时保持旧行为）：
+
+- **字幕开启**：整理前用 `/api/subtitles/find` 规则匹配源视频本地字幕，复制到目标视频旁，命名为 `<目标 basename>[.<language>].<ext>`（如 `movie.zh.srt`）；遵守 `conflict` 策略；只复制，不删除源字幕。
+- **字幕关闭**：不复制任何字幕。
+- **预告片开启** 且 item 带 `trailerUrl`：在写入的 NFO `</movie>` 前插入 `<trailer>URL</trailer>`；**不下载视频文件**。已有 `<trailer>` 时不重复。
+- **NFO 关闭**：即使 item 带 `nfo` 也不写 `.nfo`；**封面关闭**：忽略 `posterUrl` / `posterCrop`。
+- **背景图开启**：暂不支持，仅在一批结果中写一条 `背景图暂不支持，未生成文件` warning，不产生文件。
+- 字幕复制/字幕匹配/NFO/封面失败只并入该条 `OrganizeResult.warning`，不影响主视频文件结果；字幕目标同样做 `dest` 越界校验。
+
 ### 3.3 删除
 
 - 必须进入系统回收站，禁止永久删除。
@@ -214,6 +242,26 @@ export interface AIPickResult {
 - 存储位置：`data/settings.json`，原子写入（写临时文件再 rename）。
 - 文件不存在 → 返回默认值（`ai` 使用内置默认配置，`lastFolder` 为空）。
 - `save_settings` 整体覆盖，不做深合并。
+
+### 3.5 本地字幕匹配（`POST /api/subtitles/find`）
+
+请求：
+
+```json
+{ "videoPath": "C:\\media\\movie.mp4" }
+```
+
+返回：
+
+```json
+{ "subtitles": [{ "path": "C:\\media\\movie.zh.srt", "format": "srt", "language": "zh" }] }
+```
+
+- `videoPath` 必须是**绝对路径**，`resolve` 后必须存在且是文件；否则 400。
+- 扫描视频所在目录，以及同目录下一层 `Subs` / `subs` / `字幕` 子目录（不递归更深层）。
+- 只接受 `.srt` / `.ass` / `.ssa` / `.vtt`（大小写不敏感）。
+- 匹配规则：与视频同 basename（忽略扩展名）；或 `basename.<language>.<ext>`，提取 `language`（如 `zh` / `chs` / `en`；`zh-CN`、`中字` 等也可识别）。
+- 路径返回 `resolve` 后的绝对路径；无匹配返回 `{ "subtitles": [] }`。
 
 ## 4. AI 行为
 
@@ -260,7 +308,8 @@ export interface AIPickResult {
 | POST | `/api/probe` | `{ path }` | `MediaFile` |
 | GET | `/api/fs/roots` | — | `{ roots: FsRoot[] }`（`Cache-Control: no-store`） |
 | GET | `/api/fs/list?path=<绝对路径>` | query `path` | `FsListing`（`Cache-Control: no-store`） |
-| POST | `/api/organize` | `OrganizeRequest` | `OrganizeResult[]` |
+| POST | `/api/subtitles/find` | `{ videoPath }` | `{ subtitles: SubtitleInfo[] }` |
+| POST | `/api/organize` | `OrganizeRequest`（含 `downloads`） | `OrganizeResult[]` |
 | POST | `/api/trash` | `{ paths: string[] }` | `TrashResult` |
 | GET | `/api/settings` | — | `Settings` |
 | PUT | `/api/settings` | `Settings` | `Settings` |
@@ -348,7 +397,8 @@ export interface FsListing {
   2. 0 条 → `unmatched`；1 条 → `done`；多条 → `review`（带 `candidates`）。
   3. 若 `ai.autoPick`，调用 `native.aiPick`，置信度 ≥ 阈值才自动采用。
   4. 插件不可用时回退 `native.aiIdentify`。
-- 「整理」使用真实 `native.organize()`，按返回结果逐行更新日志与状态，失败必须显示原因。
+- 「整理」使用真实 `native.organize()`，按返回结果逐行更新日志与状态，失败必须显示原因；请求必须携带当前模式的 `downloads` 与 `items[].trailerUrl`（若有），否则字幕/预告片开关不会生效。
+- 详情弹窗打开时按需调用插件 `resolve` 拉取 `trailerUrl`，并调用 `native.findSubtitles(videoPath)`；任一失败只显示提示，不阻塞简介/磁力等其它内容。预告片只提供新窗口链接，不内嵌播放器、不下载。
 - 「删除 / 清理短片」使用 `native.trash()`，失败项保留在表格并提示。
 - 所有配置变更（AI、模式、上次目录）调用 `native.saveSettings()` 持久化（500ms 防抖）。
 - 状态栏的 ffprobe 状态、速度、任务数使用真实值，不再写死。

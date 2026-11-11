@@ -25,7 +25,8 @@
 | 单进程托管前端 + API | ✅ | `server/index.ts`、`scripts/start.mjs` |
 | JavDB 访问令牌（可选，脱敏保存） | ✅ | `server/plugins/javdb/`、`registry.ts`、`_shared/settings.html` |
 | 磁力面板（详情展示 / 复制） | ✅ | `src/components/MagnetList.tsx`、`PosterModal.tsx` |
-| 预告片 / 字幕下载 | ❌ | 见 ROADMAP |
+| 预告片（TMDB URL / NFO `<trailer>`） | ✅ | `server/plugins/_shared/tmdb.ts`、`src/components/PosterModal.tsx`、`server/files.ts` |
+| 本地字幕匹配 / 整理复制 | ✅ 只做本地目录 | `server/subtitles.ts`、`server/files.ts`、`src/components/PosterModal.tsx` |
 
 ## 2. 进程与通道
 
@@ -53,7 +54,7 @@ src/
 server/
   index.ts                    # Bun HTTP + /ws + 插件资源 + dist 静态托管
   registry.ts                 # 插件发现、打包加载、热重载、用户插件覆盖
-  scan.ts / files.ts / settings.ts / ai.ts / library.ts
+  scan.ts / files.ts / subtitles.ts / settings.ts / ai.ts / library.ts
   plugins/
     _shared/{types,plugin-utils,tmdb,tmdb-plugin}.ts
     _shared/settings.html
@@ -79,7 +80,7 @@ AGENTS.md
 
 - 基础：`/api/info`、`/api/scan`、`/api/probe`
 - 文件系统：`/api/fs/roots`、`/api/fs/list`
-- 文件：`/api/organize`、`/api/trash`、`/api/open`、`/api/reveal`
+- 文件：`/api/organize`（含 `downloads` 开关）、`/api/subtitles/find`、`/api/trash`、`/api/open`、`/api/reveal`
 - 设置：`GET/PUT /api/settings`
 - AI：`/api/ai/test`、`/api/ai/identify`、`/api/ai/pick`（共享服务，同时经 `ctx.ai` 注入插件）
 - 刮削源（统一插件接口）：
@@ -170,9 +171,11 @@ CREATE TABLE items (
 ### TMDB
 
 - v3 Key 走 `api_key`，`eyJ` 开头视为 v4 Bearer
-- 电影 `/search/movie`、`/movie/{id}?append_to_response=credits`
-- 剧集 `/search/tv`、`/tv/{id}`
+- 电影 `/search/movie`、`/movie/{id}?append_to_response=credits`、`/movie/{id}/videos`
+- 剧集 `/search/tv`、`/tv/{id}`、`/tv/{id}/videos`
 - `runtime` / `episode_run_time[0]` 为分钟 → ×60
+- 预告片只取 YouTube key，返回 `trailerUrl` / `trailerSite`；videos 失败只写 warning，详情仍返回
+- 本地字幕匹配见 `server/subtitles.ts`：同目录 + 一层 `Subs`/`字幕`，不联网
 - 无 Key 明确报错，前端状态栏显示
 
 ### Bangumi

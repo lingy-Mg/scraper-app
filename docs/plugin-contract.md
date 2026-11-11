@@ -151,6 +151,12 @@ POST /api/plugins/javdb/resolve
 - 直接返回插件的结果对象（JavDB 含 `magnets`，TMDB/Bangumi 含 `raw` 等），不额外包一层。
 - `candidateId` 一般来自同一插件 `identify` 返回的 `id` 或 `detailId`。
 - JavDB 的 `magnets[]` 字段（插件已转 camelCase）：`name / hash / size / cnsub / hd / filesCount / pikpakUrl`；前端只做展示与复制，不调用下载接口。
+- TMDB 详情额外返回 `trailerUrl`（完整 `https://www.youtube.com/watch?v=<key>`）与可选 `trailerSite`（当前为 `YouTube`）：
+  - 请求 `GET /movie/{id}/videos` 或 `GET /tv/{id}/videos`（按插件 mediaType）；
+  - 只取 YouTube；优先官方 Trailer，其次 Trailer，再其次官方 Teaser / Teaser；
+  - 预告片请求失败只写 warning，不影响详情返回；没有预告片时字段省略。
+  - Bangumi / JavDB 没有统一预告片字段，不返回这两个字段，也不报错。
+- 插件返回的 `trailerUrl` 只作为 URL 使用：详情弹窗新窗口打开，整理时写入 NFO `<trailer>`；**不下载视频**。
 
 ## 4. 插件上下文 ctx
 
