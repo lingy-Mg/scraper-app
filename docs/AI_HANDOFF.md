@@ -20,6 +20,8 @@
 | SQLite 媒体库 | ✅ | `server/library.ts` |
 | 媒体库增强（查询/重复/统计/来源） | ✅ | `server/library.ts`、`server/sources.ts`、`src/components/LibraryModal.tsx` |
 | 默认隐藏短片 / 清理弹窗列表 | ✅ | `src/App.tsx` |
+| 深色主题 / 表格列宽与列显隐 | ✅ | `src/ThemeRoot.tsx`、`src/theme.ts`、`src/tableColumns.ts`、`src/components/FileTable.tsx` |
+| 设置导入导出（默认脱敏） | ✅ | `server/settings-io.ts`、`src/components/SettingsExportModal.tsx` |
 | 底部日志默认显示 / 拖动高度 | ✅ | `src/components/LogPanel.tsx`、`src/App.tsx` |
 | NFO + 封面随整理写入 | ✅ | `server/files.ts`、`src/utils.ts` |
 | 网页内目录选择器 | ✅ | `src/components/FolderPickerModal.tsx`、`server/index.ts` |
@@ -113,12 +115,23 @@ interface Settings {
   hideShorts?: boolean     // 默认 true
   logOpen?: boolean        // 默认 true
   logHeight?: number       // 默认 180
+  theme?: 'light' | 'dark' | 'system'  // 默认 system（旧设置缺省时按 system）
+  table?: {
+    widths?: Record<string, number>    // 列 key → 像素宽度（40–1200）
+    hidden?: string[]                  // 被隐藏的数据列；操作/选择列不可隐藏
+  }
   blacklist?: string[]     // 文件名黑名单（支持 * / ?，无通配符按包含匹配）
   sources?: { path: string; name?: string; addedAt: number }[]  // 媒体库来源
 }
 ```
 
 `PUT /api/settings` 在请求未携带 `sources` 时保留现有来源，避免前端保存其它设置时覆盖来源记录。
+
+设置导入导出：
+- `GET /api/settings/export?includeSecrets=0|1` 返回带 `Content-Disposition` 的下载 JSON；默认递归移除 `apiKey` / `*ApiKey` / `*Token` / `token` / `password` / `secret`，仅显式 `includeSecrets=1` 包含明文。
+- `POST /api/settings/import` 先严格校验结构，非法返回 400 且不落盘；`ai` 逐字段合并（脱敏文件不会清空本机密钥），`table.widths` 按键合并，`hidden/sources/blacklist` 提供时整体替换。
+- 插件配置 `data/config.json`（含 JavDB 令牌）**不参与**导出/导入，不要把它并入 `Settings`。
+- 日志只记录操作结果和字段名，禁止回显密钥明文。
 
 `ModeConfig` 额外包含：`tmdbApiKey`、`tmdbLang`、`bangumiToken`（按模式保存）。
 插件调用时通过 `ctx.modeConfig` 读取这些值；语言与 `sources` 开关以插件自身 `ctx.config` 为准。
@@ -245,8 +258,8 @@ CREATE TABLE items (
 自动化（不联网、不读写项目 `data/`）：
 
 ```powershell
-bun test          # 73 个用例：扫描/整理/媒体库（查询/重复/统计）/来源/插件/文件浏览/JavDB 令牌
-bun run smoke     # 10 项 HTTP 端到端：扫描 → 探测 → 媒体库 → 查询/重复/统计 → 来源 → 整理+NFO → 回收站
+bun test          # 82 个用例：扫描/整理/媒体库（查询/重复/统计）/来源/插件/文件浏览/JavDB 令牌/设置兼容与导入导出
+bun run smoke     # 12 项 HTTP 端到端：扫描 → 探测 → 媒体库 → 查询/重复/统计 → 来源 → 设置导出脱敏/导入 → 整理+NFO → 回收站
 bun run check     # 一键：tsc --noEmit → bun build → bun test → npm run build，任一步失败退出 1
 ```
 
@@ -274,6 +287,9 @@ bun run check     # 一键：tsc --noEmit → bun build → bun test → npm run
 10. 右键任意行「拉黑此文件名」：该行立即隐藏；`文件 → 文件名黑名单…` 里确认规则；重新扫描时该文件不再出现；媒体库记录会在下次 replace 扫描时清理。
 11. 打开一个 JavDB / AV 已匹配行的详情：应加载磁力列表；未填令牌时显示「JavDB 需要登录：请在 JavDB 插件设置中填写访问令牌」，而不是「暂无磁力数据」。
 12. 在插件设置填写令牌后重启：`GET /api/plugins/javdb/config` 的 `token` 应为 `••••••••`；`data/config.json` 中保存明文（仅本机）。
+13. `视图 → 主题` 切换浅色/深色/跟随系统：表格、日志、弹窗、滚动条文字均可读；刷新后保持。
+14. 拖动表头边界调宽、双击恢复；`视图 → 列设置…` 隐藏「标题」等列后刷新仍生效；「操作/选择」列始终显示。
+15. `文件 → 导出设置…`：默认导出文件不含 `apiKey`/`token`；勾选「包含密钥」出现警告且字段出现。导入非法 JSON 或非法 `theme` 应报错且设置不变；合法导入后页面自动重载。
 
 ## 10. 运行与交付（B/S 单端）
 

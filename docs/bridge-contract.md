@@ -253,6 +253,21 @@ export interface AIPickResult {
 - 文件不存在 → 返回默认值（`ai` 使用内置默认配置，`lastFolder` 为空，`sources` 为空数组）。
 - `PUT /api/settings` 整体覆盖，但请求**未携带 `sources`** 时保留现有来源记录（避免前端保存其它设置时丢失来源）；显式传入 `sources` 时以其为准。
 - 旧设置缺少 `sources` → 读取时返回 `[]`。
+- `theme`：`light` / `dark` / `system`，缺省或非法值按 `system`；`system` 由前端 `prefers-color-scheme` 决定实际主题。
+- `table`：`{ widths?: Record<string, number>; hidden?: string[] }`。宽度仅接受 40–1200 的有限数字并四舍五入；`hidden` 只保留可隐藏列（`status/poster/code/file/title/maker/actors/dur/size/src/progress`）并去重；`act`（操作）与选择列永远不隐藏。缺省或非法值回退空设置。
+
+### 3.4.1 设置导出 / 导入
+
+- `GET /api/settings/export?includeSecrets=0|1`：返回可下载 JSON，响应带 `Content-Disposition: attachment` 与 `Cache-Control: no-store`。
+  - 外层：`{ app: "scraper", version: 1, exportedAt, includesSecrets, settings }`。
+  - 默认 `includeSecrets=0`：递归移除密钥字段（`apiKey` / `*ApiKey` / `*Token` / `token` / `password` / `secret` 等），不返回明文；仅显式 `includeSecrets=1` 才包含。
+  - **插件配置 `data/config.json` 不在导出范围**（含 JavDB 访问令牌）；`settings.modes` 中同名字段也会被默认脱敏。
+  - 非法 `includeSecrets` 值返回 400。
+- `POST /api/settings/import`：接受导出文件外层结构或直接设置对象。
+  - 先做结构校验（未知字段忽略；已知字段类型非法、`theme` 非法、空设置等返回 400），校验失败不写盘。
+  - 合并语义：标量覆盖；`ai` 逐字段合并（脱敏文件不含 `apiKey` 时保留本机密钥）；`modes` 按模式 id 合并；`table.widths` 按键合并，`table.hidden` 提供时整体替换；`sources` / `blacklist` 整体替换。
+  - 返回 `{ ok: true, settings, applied }`，`applied` 为实际写入的字段名。
+- 两个接口都不得把密钥明文写入日志。
 
 ### 3.5 本地字幕匹配（`POST /api/subtitles/find`）
 
@@ -334,6 +349,8 @@ export interface AIPickResult {
 | DELETE | `/api/sources?path=<绝对目录>` | query `path` | `{ removed, sources }` |
 | GET | `/api/settings` | — | `Settings` |
 | PUT | `/api/settings` | `Settings` | `Settings` |
+| GET | `/api/settings/export` | query `includeSecrets=0\|1` | `SettingsExportFile`（下载头） |
+| POST | `/api/settings/import` | 导出文件或设置对象 | `{ ok, settings, applied }` |
 | POST | `/api/ai/test` | `{ config }` | `AITestResult` |
 | POST | `/api/ai/identify` | `{ config, filename }` | `AIIdentifyResult` |
 | POST | `/api/ai/pick` | `{ config, filename, candidates }` | `AIPickResult` |

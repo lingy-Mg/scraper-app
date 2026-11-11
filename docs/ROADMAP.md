@@ -76,10 +76,11 @@
 
 ### P6 体验
 
-- 深色主题
-- 表格列宽可调/列显隐
-- 任务队列暂停/取消
-- 设置导入导出
+- [x] 深色主题：浅色/深色/跟随系统，`Settings.theme` 持久化；CSS 变量适配日志、表格、弹窗、滚动条
+- [x] 表格列宽可调/列显隐：拖动表头调宽、双击恢复默认；`Settings.table.widths/hidden` 持久化，操作/选择列不可隐藏
+- [ ] 任务队列暂停/取消（下一轮）
+- [x] 设置导入导出：`GET /api/settings/export`（默认脱敏，`includeSecrets=1` 才含密钥）与 `POST /api/settings/import`（严格校验、400 不落盘）；插件 `data/config.json` 不参与
+- 验证：`bun test`（82 用例）、`bun run smoke`（12 项）、`bun run check`；真实库只读查询总数 127 保持不变
 
 ## 不建议做
 
