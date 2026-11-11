@@ -22,6 +22,7 @@ import {
   type AIConfig,
   type Settings
 } from './settings'
+import { buildSettingsExport, importSettingsPayload } from './settings-io'
 import { aiIdentify, aiPick, aiTest, type Candidate } from './ai'
 import { cacheCover } from './covers'
 import {
@@ -532,6 +533,32 @@ async function handleApi(req: Request, url: URL) {
   }
 
   if (route === 'settings') {
+    const action = parts[2]
+
+    if (action === 'export') {
+      if (req.method !== 'GET') return methodNotAllowed()
+      const raw = queryString(url, 'includeSecrets')
+      if (raw && raw !== '0' && raw !== '1') {
+        throw new HttpError(400, 'includeSecrets 必须是 0 或 1')
+      }
+      const includeSecrets = raw === '1'
+      const payload = buildSettingsExport(await loadSettings(), includeSecrets)
+      const stamp = payload.exportedAt.replace(/[:.]/g, '-')
+      return json(payload, 200, {
+        ...NO_STORE,
+        'content-disposition': `attachment; filename="scraper-settings-${stamp}.json"`
+      })
+    }
+
+    if (action === 'import') {
+      if (req.method !== 'POST') return methodNotAllowed()
+      // 密钥内容不写日志；校验失败由 HttpError(400) 统一返回且不落盘。
+      const result = await importSettingsPayload(await readJson(req))
+      return json({ ok: true, settings: result.settings, applied: result.applied }, 200, NO_STORE)
+    }
+
+    if (action) return json({ error: 'not found' }, 404)
+
     if (req.method === 'GET') return json(await loadSettings())
     if (req.method === 'PUT') {
       const body = ensureObject(await readJson(req), 'settings')
