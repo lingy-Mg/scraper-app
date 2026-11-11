@@ -8,7 +8,10 @@
     "dev:ui": "vite",
     "dev:server": "bun --watch server/index.ts",
     "build": "tsc -b && vite build",
-    "start": "bun scripts/start.mjs"
+    "start": "bun scripts/start.mjs",
+    "test": "bun test",
+    "smoke": "bun scripts/smoke.mjs",
+    "check": "bun scripts/check.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",

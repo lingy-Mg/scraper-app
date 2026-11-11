@@ -12,6 +12,9 @@ server/data/
 # 统一放在项目根目录 data/，不写入任何用户目录
 data/
 
+# 项目内临时目录（check 的 TEMP/TMP 指向这里，规避系统 TEMP 权限问题）
+.tmp/
+
 # 密钥与本地配置
 .env
 .env.*
