@@ -111,7 +111,7 @@ plugin:close  →  关闭弹窗
 - 删除：系统回收站；单 PowerShell 进程批量处理，失败自动逐条回退并返回原因
 - 打开文件 / 在资源管理器中定位
 - 网页内目录选择器：`/api/fs/roots`、`/api/fs/list` 浏览真实路径，不调用系统对话框
-- 设置持久化：`server/data/settings.json`，原子写入
+- 设置持久化：`data/settings.json`，原子写入
 - AI 代理：后端直连 OpenAI 兼容接口，Key 只在本机，不经浏览器
 
 ### 刮削流程

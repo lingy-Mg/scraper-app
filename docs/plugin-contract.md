@@ -38,7 +38,7 @@ server/plugins/
 用户插件（同结构，已 gitignore）：
 
 ```
-server/data/plugins/
+data/plugins/
   <id>/
     plugin.json
     index.ts
@@ -79,7 +79,7 @@ server/data/plugins/
 | `entry` | 否 | 默认 `index.ts` |
 | `capabilities` | 否 | 缺省 `["identify","resolve"]`；会原样出现在 `GET /api/plugins` |
 | `labels` | 是 | `code` / `title` 两个列标题 |
-| `defaults` | 是 | 插件默认配置，用户覆盖存于 `server/data/config.json` |
+| `defaults` | 是 | 插件默认配置，用户覆盖存于 `data/config.json` |
 | `order` | 否 | 模式栏排序，默认 100 |
 
 ### 2.1 配置字段与密钥
@@ -90,7 +90,7 @@ server/data/plugins/
 |---|---|---|
 | `token` | `string` | JavDB / AV 访问令牌（JWT，可选）。为空时匿名请求；有值时发送 `authorization: Bearer <token>` |
 
-- `token` 只写入 `server/data/config.json`（已 gitignore），**不写日志、不回显明文**。
+- `token` 只写入 `data/config.json`（已 gitignore），**不写日志、不回显明文**。
 - `GET /api/plugins`、`GET /api/plugins/:id/config`、`PUT /api/plugins/:id/config` 返回的 `token` 统一脱敏为 `••••••••`。
 - `PUT` 时：省略 `token` 或传脱敏占位符 → 保持原值；传非空字符串 → 覆盖；传空字符串 → 清除。
 - 新增密钥类字段时，在 `server/registry.ts` 的 `SECRET_FIELDS` 登记，即可自动脱敏。
@@ -176,7 +176,7 @@ interface PluginContext {
 
 AI 是**通用回退引擎，不是刮削站**，保持为共享服务 `server/ai.ts`：
 
-- 插件通过 `ctx.ai.identify(filename)` / `ctx.ai.pick(filename, candidates)` 调用，默认使用 `server/data/settings.json` 的 `settings.ai`；
+- 插件通过 `ctx.ai.identify(filename)` / `ctx.ai.pick(filename, candidates)` 调用，默认使用 `data/settings.json` 的 `settings.ai`；
 - 可传 `overrides` 临时覆盖 AI 配置；
 - `/api/ai/test|identify|pick` 保留，供前端直接测试；
 - 插件不应自行实现模型调用，也不要假设 AI 一定可用（需处理抛错与 `fallback`）。
@@ -184,7 +184,7 @@ AI 是**通用回退引擎，不是刮削站**，保持为共享服务 `server/a
 ## 5. 加载与热重载
 
 1. 插件目录内所有文件（含 `_shared/`、跨插件相对引用）会被 `Bun.build` 打包成单个 ESM：
-   `server/data/.plugin-cache/<id>-<source>-<hash>.mjs`。
+   `data/.plugin-cache/<id>-<source>-<hash>.mjs`。
 2. `hash` 由内置 + 用户插件根目录内文件的 `mtime + size` 汇总；未变化时复用缓存。
 3. 打包产物通过 `import(路径 + '?v=<generation>')` 加载，避免命中模块缓存。
    - 每次加载 / 重载后按 `id-source` 只保留最新 **2** 个 `.mjs`；当前正在使用的产物无论新旧都不会被删除。
@@ -202,7 +202,7 @@ AI 是**通用回退引擎，不是刮削站**，保持为共享服务 `server/a
 
 ## 7. 用户插件最小示例
 
-`server/data/plugins/demo/plugin.json`：
+`data/plugins/demo/plugin.json`：
 
 ```json
 {
@@ -222,7 +222,7 @@ AI 是**通用回退引擎，不是刮削站**，保持为共享服务 `server/a
 }
 ```
 
-`server/data/plugins/demo/index.ts`：
+`data/plugins/demo/index.ts`：
 
 ```ts
 export default {
@@ -253,4 +253,4 @@ export default {
 - 字段一律 camelCase；时长进入 `Candidate` / `Row` 前必须换算为**秒**。
 - JavDB 签名常量、番号正则、封面 URL 行为不得随意更改；封面仍必须经 `/api/cover` 解码。
 - 新增数据源只新增插件目录，不在 `server/index.ts` 增加站点路由。
-- 插件不得读取/打印密钥；不得把 `server/data/` 提交到仓库。
+- 插件不得读取/打印密钥；不得把 `data/` 提交到仓库。

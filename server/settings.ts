@@ -58,12 +58,12 @@ export const DEFAULT_AI: AIConfig = {
 
 /**
  * 运行时数据目录的唯一来源。
- * 测试 / 多实例可通过 `SCRAPER_DATA_DIR` 注入隔离目录；默认保持
- * `server/data`，对现有用户行为完全不变。
+ * 默认是项目根目录下的 `data/`，**绝不写入用户目录（APPDATA 等）**；
+ * 测试 / 多实例可通过 `SCRAPER_DATA_DIR` 注入隔离目录。
  */
 export function resolveDataDir(): string {
   const injected = process.env.SCRAPER_DATA_DIR?.trim()
-  return injected ? resolve(injected) : join(import.meta.dir, 'data')
+  return injected ? resolve(injected) : join(import.meta.dir, '..', 'data')
 }
 
 export const DATA_DIR = resolveDataDir()

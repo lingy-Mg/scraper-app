@@ -49,7 +49,7 @@ export function removeItems(paths: string[]): number
 export function clearItems(mode?: string): number
 ```
 
-- 数据库：`server/data/library.db`，`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`
+- 数据库：`data/library.db`，`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`
 - 表：
 
 ```sql

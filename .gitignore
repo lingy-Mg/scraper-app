@@ -5,12 +5,12 @@ dist-ssr/
 *.local
 *.tsbuildinfo
 
-# Rust 构建产物（cargo check/test 会生成数 GB）
-src-tauri/target/
-target/
+# 旧目录：v0.1 曾把运行时数据放在 server/data，迁移后不应再产生
+server/data/
 
 # 运行时数据：含 AI Key / TMDB Key / Bangumi Token / 媒体库 / 封面缓存
-server/data/
+# 统一放在项目根目录 data/，不写入任何用户目录
+data/
 
 # 密钥与本地配置
 .env

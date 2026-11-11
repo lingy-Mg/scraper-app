@@ -97,12 +97,12 @@
 ## 2026-11-11 刮削源插件化
 
 - [x] 通用插件接口：`POST /api/plugins/:id/{identify,resolve}`、`GET /api/plugins` 返回 `capabilities/status/error/source`
-- [x] `Bun.build` 打包加载：`server/data/.plugin-cache/<id>-<source>-<hash>.mjs`，改目录内任意 `.ts` 后 reload 生效
+- [x] `Bun.build` 打包加载：`data/.plugin-cache/<id>-<source>-<hash>.mjs`，改目录内任意 `.ts` 后 reload 生效
 - [x] JavDB 实现移入 `server/plugins/javdb/javdb-api.ts`，删除 `/api/javdb/*` 路由
 - [x] TMDB / Bangumi 移入 `_shared/tmdb.ts` 与 `anime/bangumi.ts`，删除 `/api/tmdb/*`、`/api/bangumi/*`
 - [x] AI 作为共享服务经 `ctx.ai` 注入插件，`/api/ai/*` 保留
 - [x] `src/native.ts` 刮削方法统一改走 `/api/plugins/:id/{identify,resolve}`（签名不变）
-- [x] 用户插件目录 `server/data/plugins/`，同 id 覆盖内置，缺失时静默跳过
+- [x] 用户插件目录 `data/plugins/`，同 id 覆盖内置，缺失时静默跳过
 - [x] 新增 `docs/plugin-contract.md` 并同步接口文档
 - 验证：`npx tsc --noEmit`、`bun build server/index.ts`；`GET /api/plugins` 5 个插件；旧路由 404；修改非入口文件后 reload 生效
 
@@ -110,7 +110,7 @@
 
 - [x] 上游四个镜像要求登录（`JWTVerificationError: 請登錄帳號`）；不做任何绕过
 - [x] JavDB / AV 插件设置新增可选「访问令牌」：有值时发送 `authorization: Bearer <token>`，空值匿名
-- [x] 令牌只保存在 `server/data/config.json`，接口回显脱敏，不写日志
+- [x] 令牌只保存在 `data/config.json`，接口回显脱敏，不写日志
 - [x] 鉴权失败返回可操作中文提示（区分「未填写」与「已失效」）
 - [x] 详情弹窗磁力列表：名称 tooltip、大小、中文字幕、高清、文件数；单条复制 / 复制全部
 - [x] 复制失败降级只读文本框；无数据与鉴权失败状态分开

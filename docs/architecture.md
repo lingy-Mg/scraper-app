@@ -99,7 +99,7 @@ server/plugins/
 ```
 
 - `apiVersion` 不匹配时插件进入 `error` 状态，宿主仍展示但不可用。
-- `defaults` 是默认配置，用户修改后写入 `server/data/config.json`，按插件 id 覆盖。
+- `defaults` 是默认配置，用户修改后写入 `data/config.json`，按插件 id 覆盖。
 
 ### 3.3 执行模型
 

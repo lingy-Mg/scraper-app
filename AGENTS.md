@@ -46,9 +46,10 @@ AI 识别可走本机 `opencode` CLI（需在 PATH 中）。服务只监听 `127
 5. **密钥只在本机**：AI Key、TMDB Key、Bangumi Token 不写入日志、不提交仓库。
 6. **扫描过滤**：跳过隐藏目录、符号链接、非视频扩展名、TypeScript 声明文件 `.d.ts`。
 7. **短片判定**：`dur > 0` 才算短片；默认 `hideShorts=true` 隐藏小于 `minDur` 分钟的文件。
-8. **Vite watch**：`server/data/**` 与 `dist/**` 必须忽略，避免运行时数据触发无效重载。
+8. **Vite watch**：`data/**` 与 `dist/**` 必须忽略，避免运行时数据触发无效重载。
 9. **OpenCode CLI 调用**：stdin 必须为 null/ignore，提示词写文件后用 `--file` 传入，否则 CLI 会等待 stdin 卡死；超时要杀进程树（Windows `taskkill /T /F`）。
 10. **单进程交付**：构建后用 `npm run start` 启动，只监听 `127.0.0.1`；不生成 exe/安装包，不提交 `dist/`。
+11. **数据目录**：所有运行时数据（设置、密钥、媒体库、封面、插件配置、缓存）只写项目根目录 `data/`，**禁止写入 `%APPDATA%` 等用户目录**。测试通过 `SCRAPER_DATA_DIR` 注入临时目录；`server/data/` 是已废弃的旧路径，不得再产生。
 
 ## 当前完成状态
 
@@ -85,7 +86,7 @@ AI 识别可走本机 `opencode` CLI（需在 PATH 中）。服务只监听 `127
 - JavDB 签名常量对应 App 1.9.28，升级后需更新 `server/javdb.ts`。
 - JavDB 动态域名解密不稳定，固定镜像 + host 失败切换。
 - OpenCode CLI 每次 `--standalone` 启动私有服务，单次约 3–10s；默认超时最少 90s。
-- 测试数据目录：`server/data/`（开发与生产共用，已 gitignore）；用户插件放 `server/data/plugins/<id>/`，同 id 覆盖内置。
+- 测试数据目录：`data/`（开发与生产共用，已 gitignore）；用户插件放 `data/plugins/<id>/`，同 id 覆盖内置。
 - 插件热重载必须经 `Bun.build` 打包后再 `import`；只给入口文件加 `?v=` 不会让入口依赖的模块失效。
 - 刮削站路由统一为 `/api/plugins/:id/{identify,resolve}`；不要再新增 `/api/javdb/*`、`/api/tmdb/*`、`/api/bangumi/*`，新增站点只加插件目录。
 - `esbuild` 清理系统临时目录偶发 `Access is denied`（Windows 环境权限问题）；构建时可把 `TEMP`/`TMP` 指向项目内临时目录绕过。

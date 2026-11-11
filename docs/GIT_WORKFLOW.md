@@ -62,14 +62,14 @@ refactor(native): 移除演示模式，桥接层只保留 HTTP
 
 已在 `.gitignore` 中，不要用 `git add -f` 绕过：
 
-- `server/data/` —— 含 AI Key、TMDB Key、Bangumi Token、媒体库、封面缓存
+- `data/` —— 含 AI Key、TMDB Key、Bangumi Token、媒体库、封面缓存
 - `node_modules/`、`dist/`
 - 任何 `.env`、`*.pem`、`*.key`
 
 提交前自查：
 
 ```powershell
-git diff --cached --name-only | Select-String -Pattern "server/data|node_modules|target/|\.env"
+git diff --cached --name-only | Select-String -Pattern "data|node_modules|target/|\.env"
 ```
 
 有输出就说明漏了。

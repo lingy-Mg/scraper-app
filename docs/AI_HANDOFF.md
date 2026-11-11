@@ -110,15 +110,15 @@ interface Settings {
 
 JavDB / AV 访问令牌不走 `Settings.modes`，而是插件配置 `token`：
 
-- 存储于 `server/data/config.json` 的对应插件配置下，不进 `settings.json`、不进仓库。
+- 存储于 `data/config.json` 的对应插件配置下，不进 `settings.json`、不进仓库。
 - `GET/PUT /api/plugins/:id/config` 与 `GET /api/plugins` 回显时脱敏为 `••••••••`。
 - 插件从 `ctx.config.token` 读取；为空时匿名请求，有值时发送 `authorization: Bearer <token>`。
 
 存储位置（开发与生产共用）：
 
-- `server/data/settings.json`
-- `server/data/library.db`
-- `server/data/covers/`（封面缓存）
+- `data/settings.json`
+- `data/library.db`
+- `data/covers/`（封面缓存）
 
 ## 6. 媒体库表结构
 
@@ -150,7 +150,7 @@ CREATE TABLE items (
 
 - 协议全文：`docs/javdb-app-api.md`
 - **上游当前要求登录**：四个镜像可能返回 `JWTVerificationError: 請登錄帳號`。插件支持用户在「插件设置 → 访问令牌」填写自己的 JWT；有值时附加 `authorization: Bearer <token>`，不做任何鉴权绕过。
-- 令牌只存 `server/data/config.json`，接口回显脱敏、不写日志；缺失时提示填写，失效时提示更新。
+- 令牌只存 `data/config.json`，接口回显脱敏、不写日志；缺失时提示填写，失效时提示更新。
 - 签名：`jdsignature = ts.suffix.md5(ts + prefix)`，常量对应 App 1.9.28
 - host：`jdforrepam.com` → `apidd.spthgb.com` → `apidd.czssdgz.com` → `javdb.com`
 - `duration` 是**分钟**，入 `Candidate.duration` / `Row.dur` 时 ×60
@@ -193,7 +193,7 @@ CREATE TABLE items (
 ### OpenCode CLI（AI 后端）
 
 - 前端服务商选 `OpenCode CLI`，模型填 `provider/model`，无需 API Key
-- 后端生成独立运行目录：`server/data/opencode-runner/`
+- 后端生成独立运行目录：`data/opencode-runner/`
   - 内含 `.opencode/agents/name-only.md` + `opencode.json`（禁用 title/summary）
 - 调用：`opencode run --standalone --agent name-only --model <model> --file prompt.txt go`
 - **stdin 必须 null/ignore**，否则 CLI 等待输入卡死
@@ -237,7 +237,7 @@ npm run build
 9. 选一个大目录（数百个视频）：立刻出现进度条与当前文件，行数持续增长；进度到 100% 后表格排序稳定。
 10. 右键任意行「拉黑此文件名」：该行立即隐藏；`文件 → 文件名黑名单…` 里确认规则；重新扫描时该文件不再出现；媒体库记录会在下次 replace 扫描时清理。
 11. 打开一个 JavDB / AV 已匹配行的详情：应加载磁力列表；未填令牌时显示「JavDB 需要登录：请在 JavDB 插件设置中填写访问令牌」，而不是「暂无磁力数据」。
-12. 在插件设置填写令牌后重启：`GET /api/plugins/javdb/config` 的 `token` 应为 `••••••••`；`server/data/config.json` 中保存明文（仅本机）。
+12. 在插件设置填写令牌后重启：`GET /api/plugins/javdb/config` 的 `token` 应为 `••••••••`；`data/config.json` 中保存明文（仅本机）。
 
 ## 10. 运行与交付（B/S 单端）
 
@@ -249,12 +249,12 @@ npm run start   # Bun 单进程托管 dist + API，并打开浏览器
 - 只有一个进程，只监听 `127.0.0.1:5174`；不生成 exe/安装包。
 - 开发用 `npm run dev`（Vite 5173 + Bun 5174 热更）。
 - opencode CLI 功能需要 `opencode` 在 PATH 中。
-- 不提交 `dist/`、`server/data/`、`node_modules/`。
+- 不提交 `dist/`、`data/`、`node_modules/`。
 
 ## 11. 后续接手建议
 
 1. 先读 `docs/ROADMAP.md` 的待办与验收标准。
 2. 任何接口改动先改契约文档，再改 Bun/前端。
 3. 不要删除 `server/plugins/*`：插件列表决定模式切换；`movie/tv/anime` 虽为占位，但被模式 UI 使用。
-4. 不要把测试数据、真实 Key、`server/data/` 提交到仓库。
+4. 不要把测试数据、真实 Key、`data/` 提交到仓库。
 5. 提交前跑完整 `npx tsc --noEmit` + `bun build server/index.ts`；UI 改动至少手工验证一次关键路径。

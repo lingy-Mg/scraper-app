@@ -211,7 +211,7 @@ export interface AIPickResult {
 
 ### 3.4 设置持久化
 
-- 存储位置：`server/data/settings.json`，原子写入（写临时文件再 rename）。
+- 存储位置：`data/settings.json`，原子写入（写临时文件再 rename）。
 - 文件不存在 → 返回默认值（`ai` 使用内置默认配置，`lastFolder` 为空）。
 - `save_settings` 整体覆盖，不做深合并。
 
@@ -245,7 +245,7 @@ export interface AIPickResult {
 - `Candidate` 额外字段：`posterUrl`、`maker`、`actors`、`duration`、`detailId`。
 - 识别优先级：插件 `identify` → AI/正则。
 - 封面必须经 `/api/cover`（可选裁剪参数）解码后显示，禁止直接加载远程图片。
-- 上游现在要求登录：用户可在 JavDB / AV 插件设置填写 `token`（JWT），插件从 `ctx.config.token` 读取并附加 `authorization: Bearer <token>`；令牌只存 `server/data/config.json`，接口回显脱敏，不写日志。
+- 上游现在要求登录：用户可在 JavDB / AV 插件设置填写 `token`（JWT），插件从 `ctx.config.token` 读取并附加 `authorization: Bearer <token>`；令牌只存 `data/config.json`，接口回显脱敏，不写日志。
 - 鉴权失败返回可操作中文提示（未填写 / 已失效），前端不得显示成「暂无数据」。
 - `resolve` 的 `magnets[]` 已转 camelCase：`name / hash / size / cnsub / hd / filesCount / pikpakUrl`。详情弹窗按需拉取，只展示与复制，不调用下载接口。
 

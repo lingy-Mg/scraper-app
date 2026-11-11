@@ -9,6 +9,7 @@ export default defineConfig({
     watch: {
       // 运行时数据与构建产物不参与前端热更新，避免无效重载与文件占用。
       ignored: [
+        '**/data/**',
         '**/server/data/**',
         '**/dist/**',
         '**/.*.tmpdir/**',

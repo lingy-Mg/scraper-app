@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
@@ -31,12 +32,20 @@ const PUBLIC = {
 }
 
 /**
- * 插件可能被打包到 `server/data/.plugin-cache`，运行时数据目录由宿主注入
- * （与 `server/settings.ts` 的 DATA_DIR 同一来源，见 registry.ts）。
+ * 运行时数据目录：优先宿主注入（`SCRAPER_DATA_DIR`），否则向上找到项目根
+ * （含 package.json）并取 `data/`。插件源码与打包后的 `.plugin-cache` 深度不同，
+ * 不能写死相对层数。**不写入任何用户目录。**
  */
-const DATA_DIR = resolve(
-  process.env.SCRAPER_DATA_DIR?.trim() || join(import.meta.dir, '..', '..', 'data')
-)
+function defaultDataDir(): string {
+  let dir = import.meta.dir
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(join(dir, 'package.json'))) return join(dir, 'data')
+    dir = dirname(dir)
+  }
+  return join(import.meta.dir, '..', '..', '..', 'data')
+}
+
+const DATA_DIR = resolve(process.env.SCRAPER_DATA_DIR?.trim() || defaultDataDir())
 const UUID_FILE = join(DATA_DIR, 'javdb-device.txt')
 
 export interface JavdbMovie {
