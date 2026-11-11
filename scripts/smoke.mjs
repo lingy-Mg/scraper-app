@@ -133,6 +133,8 @@ async function main() {
 
   const movie = join(mediaDir, 'movie.mp4')
   writeFileSync(movie, mp4WithDuration(125))
+  const sourceSubtitle = join(mediaDir, 'movie.zh.srt')
+  writeFileSync(sourceSubtitle, 'subtitle-bytes')
   writeFileSync(join(mediaDir, '.hidden', 'secret.mp4'), mp4WithDuration(60))
   writeFileSync(join(mediaDir, 'types.d.ts'), 'export {}')
   writeFileSync(join(mediaDir, 'sample-trailer.mp4'), mp4WithDuration(5))
@@ -261,6 +263,77 @@ async function main() {
       assert(existsSync(nfoPath), 'NFO 未落盘', nfoPath)
       assert(readFileSync(nfoPath, 'utf8') === nfo, 'NFO 内容不一致', readFileSync(nfoPath, 'utf8'))
       assert(existsSync(movie), 'copy 不应删除源文件', movie)
+    })
+
+    await step('POST /api/organize（字幕/预告片开关）', async () => {
+      const subsOnDir = join(workDir, 'subs-on')
+      const subsOffDir = join(workDir, 'subs-off')
+      const nfo = '<movie><title>冒烟测试影片</title></movie>'
+      const items = [
+        {
+          source: movie,
+          relativeTarget: 'movies/movie.mp4',
+          nfo,
+          trailerUrl: 'https://www.youtube.com/watch?v=smoke'
+        }
+      ]
+
+      const on = await request(baseUrl, '/api/organize', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          dest: subsOnDir,
+          action: 'copy',
+          conflict: 'rename',
+          downloads: [
+            { label: '字幕', on: true },
+            { label: 'NFO', on: true },
+            { label: '预告片', on: true },
+            { label: '封面', on: false }
+          ],
+          items
+        })
+      })
+      assert(on[0]?.ok === true, '字幕开启时整理应成功', on[0])
+      const target = on[0].target
+      const subtitleTarget = target.replace(/\.mp4$/i, '.zh.srt')
+      assert(existsSync(subtitleTarget), '字幕未复制到目标目录', subtitleTarget)
+      assert(
+        readFileSync(subtitleTarget, 'utf8') === 'subtitle-bytes',
+        '目标字幕内容不一致',
+        readFileSync(subtitleTarget, 'utf8')
+      )
+      assert(existsSync(sourceSubtitle), '字幕源文件不应被删除', sourceSubtitle)
+      const nfoTarget = target.replace(/\.mp4$/i, '.nfo')
+      assert(
+        readFileSync(nfoTarget, 'utf8').includes(
+          '<trailer>https://www.youtube.com/watch?v=smoke</trailer>'
+        ),
+        'NFO 未写入 <trailer>',
+        readFileSync(nfoTarget, 'utf8')
+      )
+
+      const off = await request(baseUrl, '/api/organize', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          dest: subsOffDir,
+          action: 'copy',
+          conflict: 'rename',
+          downloads: [
+            { label: '字幕', on: false },
+            { label: 'NFO', on: false },
+            { label: '预告片', on: true }
+          ],
+          items
+        })
+      })
+      assert(off[0]?.ok === true, '字幕关闭时整理应成功', off[0])
+      assert(
+        !existsSync(join(subsOffDir, 'movies', 'movie.zh.srt')),
+        '字幕关闭时不应复制字幕'
+      )
+      assert(!existsSync(join(subsOffDir, 'movies', 'movie.nfo')), 'NFO 关闭时不应写 NFO')
     })
 
     await step('POST /api/trash（源文件移入回收站）', async () => {
