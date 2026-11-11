@@ -26,10 +26,14 @@ import { aiIdentify, aiPick, aiTest, type Candidate } from './ai'
 import { cacheCover } from './covers'
 import {
   clearItems,
+  findDuplicates,
+  libraryStats,
   listItems,
+  queryLibrary,
   removeItems,
   upsertItems,
-  type LibraryItem
+  type LibraryItem,
+  type LibrarySort
 } from './library'
 import {
   openPath,
@@ -211,6 +215,35 @@ function enumValue<T extends string>(
     throw new HttpError(400, `${label} 必须是 ${allowed.join('/')} 之一`)
   }
   return value as T
+}
+
+function queryString(url: URL, key: string): string {
+  return (url.searchParams.get(key) ?? '').trim()
+}
+
+function queryEnum<T extends string>(
+  url: URL,
+  key: string,
+  allowed: readonly T[],
+  fallback: T
+): T {
+  const raw = queryString(url, key)
+  if (!raw) return fallback
+  if (!allowed.includes(raw as T)) {
+    throw new HttpError(400, `${key} 必须是 ${allowed.join('/')} 之一`)
+  }
+  return raw as T
+}
+
+function queryInt(url: URL, key: string, fallback: number, min: number): number {
+  const raw = queryString(url, key)
+  if (!raw) return fallback
+  if (!/^\d+$/.test(raw)) throw new HttpError(400, `${key} 必须是非负整数`)
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value < min) {
+    throw new HttpError(400, `${key} 必须 >= ${min}`)
+  }
+  return value
 }
 
 function serialize(id: string, origin: string) {
@@ -534,6 +567,45 @@ async function handleApi(req: Request, url: URL) {
 
   if (route === 'library') {
     const action = parts[2]
+
+    if (action === 'query') {
+      if (req.method !== 'GET') return methodNotAllowed()
+      const sort = queryEnum<LibrarySort>(
+        url,
+        'sort',
+        ['updatedAt', 'title', 'size', 'dur', 'year'],
+        'updatedAt'
+      )
+      const order = queryEnum(url, 'order', ['asc', 'desc'], 'desc')
+      return json(
+        queryLibrary({
+          q: queryString(url, 'q'),
+          mode: queryString(url, 'mode'),
+          maker: queryString(url, 'maker'),
+          actor: queryString(url, 'actor'),
+          tag: queryString(url, 'tag'),
+          status: queryString(url, 'status'),
+          sort,
+          order,
+          limit: Math.min(500, queryInt(url, 'limit', 50, 1)),
+          offset: queryInt(url, 'offset', 0, 0)
+        }),
+        200,
+        NO_STORE
+      )
+    }
+
+    if (action === 'duplicates') {
+      if (req.method !== 'GET') return methodNotAllowed()
+      const mode = queryString(url, 'mode')
+      return json({ groups: findDuplicates(mode || undefined) }, 200, NO_STORE)
+    }
+
+    if (action === 'stats') {
+      if (req.method !== 'GET') return methodNotAllowed()
+      const mode = queryString(url, 'mode')
+      return json(libraryStats(mode || undefined), 200, NO_STORE)
+    }
 
     if (action === 'list') {
       if (req.method !== 'GET' && req.method !== 'POST') return methodNotAllowed()
