@@ -256,6 +256,56 @@ function namesFrom(value: unknown, key = 'name'): string[] {
   return out
 }
 
+/** 预告片候选排序：官方 Trailer → Trailer → 官方 Teaser → Teaser。 */
+function videoRank(video: Record<string, unknown>): number {
+  const type = text(video.type).toLowerCase()
+  const typeRank = type === 'trailer' ? 0 : type === 'teaser' ? 1 : -1
+  if (typeRank < 0) return -1
+  return typeRank * 2 + (video.official === true ? 0 : 1)
+}
+
+function trailerOf(videos: unknown): { trailerUrl?: string; trailerSite?: string } {
+  const candidates = arrayOf(objectAt(videos).results)
+    .map(objectAt)
+    .filter(
+      (video) =>
+        text(video.site).toLowerCase() === 'youtube' &&
+        text(video.key) &&
+        videoRank(video) >= 0
+    )
+    .sort((left, right) => videoRank(left) - videoRank(right))
+
+  const best = candidates[0]
+  if (!best) return {}
+  return {
+    trailerUrl: `https://www.youtube.com/watch?v=${encodeURIComponent(text(best.key))}`,
+    trailerSite: 'YouTube'
+  }
+}
+
+/**
+ * 详情补充预告片。失败只记 warning，不影响详情主流程。
+ * 只取 YouTube 的官方 Trailer / Teaser；Bangumi / JavDB 不走这里。
+ */
+async function fetchTrailer(
+  id: string,
+  media: MediaType,
+  apiKey: string
+): Promise<{ trailerUrl?: string; trailerSite?: string }> {
+  try {
+    const data = await requestJson(
+      `/${media}/${encodeURIComponent(id)}/videos`,
+      apiKey
+    )
+    return trailerOf(data)
+  } catch (error) {
+    console.warn(
+      `[tmdb] 预告片获取失败（${media}/${id}）：${error instanceof Error ? error.message : String(error)}`
+    )
+    return {}
+  }
+}
+
 function toCandidate(data: Record<string, unknown>, mediaType: MediaType): ProviderCandidate {
   const rawId = text(data.id)
   const title =
@@ -440,8 +490,10 @@ export async function tmdbDetail(
   })
   if (!isRecord(data) || !text(data.id)) throw new Error('TMDB 条目不存在')
 
+  const trailer = await fetchTrailer(detailId, media, key)
   return {
     ...toCandidate(data, media),
+    ...trailer,
     raw: data
   }
 }

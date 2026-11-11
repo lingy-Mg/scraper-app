@@ -19,6 +19,10 @@ export interface ProviderCandidate {
 
 export interface ProviderDetail extends ProviderCandidate {
   tags?: string[]
+  /** 官方预告片完整地址（当前仅 TMDB 提供，YouTube watch URL）。 */
+  trailerUrl?: string
+  /** 预告片站点标识，例如 `YouTube`。 */
+  trailerSite?: string
   raw?: Record<string, unknown>
 }
 
