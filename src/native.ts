@@ -15,6 +15,7 @@ import type {
   OrganizeResult,
   ScanProgress,
   Settings,
+  SubtitleInfo,
   TrashResult
 } from './types'
 
@@ -173,6 +174,7 @@ export interface NativeBridge {
   fsList(path: string): Promise<FsListing>
   pickFolder(): Promise<string | null>
   organize(req: OrganizeRequest): Promise<OrganizeResult[]>
+  findSubtitles(videoPath: string): Promise<SubtitleInfo[]>
   trash(paths: string[]): Promise<TrashResult>
   loadSettings(): Promise<Settings>
   saveSettings(settings: Settings): Promise<void>
@@ -244,6 +246,13 @@ export const native: NativeBridge = {
 
   organize(req) {
     return http<OrganizeResult[]>('/api/organize', { body: req })
+  },
+
+  async findSubtitles(videoPath) {
+    const data = await http<{ subtitles: SubtitleInfo[] }>('/api/subtitles/find', {
+      body: { videoPath }
+    })
+    return data.subtitles ?? []
   },
 
   trash(paths) {

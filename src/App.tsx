@@ -1404,9 +1404,70 @@ export default function ScraperApp() {
     }
   }
 
+  /** 仅电影 / 电视剧有 TMDB 预告片；Bangumi / JavDB 返回空。 */
+  const trailerKindOf = (row: Row): 'movie' | 'tv' | null => {
+    const key = row.mode || String(modeKey)
+    return key === 'movie' || key === 'tv' ? key : null
+  }
+
+  /** 从插件详情补拉 trailerUrl；失败只写日志，不影响详情其它内容。 */
+  const fetchTrailer = async (
+    row: Row
+  ): Promise<{ trailerUrl?: string; trailerSite?: string }> => {
+    const kind = trailerKindOf(row)
+    if (!kind || !row.detailId) return {}
+    const config = modes[kind] ?? mode
+    const apiKey = (config?.tmdbApiKey || '').trim()
+    if (!apiKey) return {}
+    const detail = await native.tmdbDetail(row.detailId, kind, apiKey, config?.tmdbLang)
+    return {
+      trailerUrl:
+        typeof detail.trailerUrl === 'string' && detail.trailerUrl
+          ? detail.trailerUrl
+          : undefined,
+      trailerSite:
+        typeof detail.trailerSite === 'string' && detail.trailerSite
+          ? detail.trailerSite
+          : undefined
+    }
+  }
+
+  const loadTrailer = async (row: Row) => {
+    if (row.trailerUrl || !trailerKindOf(row) || !row.detailId) return
+    try {
+      const trailer = await fetchTrailer(row)
+      if (!trailer.trailerUrl) return
+      patchRow(row.uid, trailer)
+      setPosterRow((prev) => (prev && prev.uid === row.uid ? { ...prev, ...trailer } : prev))
+    } catch (error) {
+      pushLog('warn', `预告片获取失败：${row.file} · ${errText(error)}`)
+    }
+  }
+
+  const loadSubtitles = async (row: Row) => {
+    const target = filePath(row)
+    const apply = (patch: Partial<Row>) => {
+      patchRow(row.uid, patch)
+      setPosterRow((prev) => (prev && prev.uid === row.uid ? { ...prev, ...patch } : prev))
+    }
+    apply({ subtitlesLoading: true, subtitlesError: undefined, subtitles: undefined })
+    if (!target) {
+      apply({ subtitlesLoading: false, subtitles: [] })
+      return
+    }
+    try {
+      const subtitles = await native.findSubtitles(target)
+      apply({ subtitlesLoading: false, subtitles })
+    } catch (error) {
+      apply({ subtitlesLoading: false, subtitlesError: errText(error) })
+    }
+  }
+
   const openPoster = (row: Row) => {
     setPosterRow(row)
     if (!row.magnets && !row.magnetsLoading) void loadMagnets(row)
+    void loadTrailer(row)
+    void loadSubtitles(row)
   }
 
   const openRow = async (row: Row) => {

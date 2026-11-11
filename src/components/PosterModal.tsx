@@ -1,7 +1,7 @@
 import { Button, Modal } from 'antd'
-import { ScissorOutlined, UndoOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, ScissorOutlined, UndoOutlined } from '@ant-design/icons'
 import type { Row } from '../types'
-import { fmtDur } from '../utils'
+import { baseName, fmtDur } from '../utils'
 import MagnetList from './MagnetList'
 
 const BG = [
@@ -105,6 +105,63 @@ export default function PosterModal({ row, onClose, onCrop, onReset }: Props) {
                 </div>
               )}
             </div>
+
+            {row.trailerUrl && (
+              <div style={{ marginTop: 10 }}>
+                <Button
+                  size="small"
+                  icon={<PlayCircleOutlined />}
+                  href={row.trailerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  预告片{row.trailerSite ? ` · ${row.trailerSite}` : ''}
+                </Button>
+              </div>
+            )}
+
+            <div style={{ marginTop: 12, borderTop: '1px solid #262c34', paddingTop: 8 }}>
+              <div style={{ fontSize: 11.5, color: '#8a929c', marginBottom: 4 }}>字幕</div>
+              {row.subtitlesLoading || row.subtitles === undefined ? (
+                <div style={{ fontSize: 11.5, color: '#636b76' }}>正在匹配字幕…</div>
+              ) : row.subtitlesError ? (
+                <div style={{ fontSize: 11.5, color: '#c98a6b' }}>
+                  字幕匹配失败：{row.subtitlesError}
+                </div>
+              ) : row.subtitles.length === 0 ? (
+                <div style={{ fontSize: 11.5, color: '#636b76' }}>未找到字幕</div>
+              ) : (
+                <div style={{ display: 'grid', gap: 3 }}>
+                  {row.subtitles.map((subtitle) => (
+                    <div
+                      key={subtitle.path}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}
+                    >
+                      <span
+                        title={subtitle.path}
+                        style={{
+                          minWidth: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {baseName(subtitle.path)}
+                      </span>
+                      {subtitle.language && (
+                        <span className="tag" style={{ flex: 'none' }}>
+                          {subtitle.language}
+                        </span>
+                      )}
+                      <span style={{ flex: 'none', color: '#636b76' }}>
+                        {subtitle.format.toUpperCase()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <MagnetList
               magnets={row.magnets}
               loading={row.magnetsLoading}

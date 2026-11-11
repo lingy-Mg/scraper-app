@@ -55,6 +55,13 @@ export interface CropRect {
   height: number
 }
 
+/** 本地字幕匹配结果（GET/POST /api/subtitles/find）。 */
+export interface SubtitleInfo {
+  path: string
+  format: string
+  language?: string
+}
+
 export interface OrganizeItem {
   source: string
   relativeTarget: string
@@ -285,6 +292,13 @@ export interface Row {
   magnets?: Magnet[]
   magnetsLoading?: boolean
   magnetsError?: string
+  /** 插件详情返回的预告片地址；仅保存 URL，不下载视频。 */
+  trailerUrl?: string
+  trailerSite?: string
+  /** 详情弹窗的本地字幕匹配结果。 */
+  subtitles?: SubtitleInfo[]
+  subtitlesLoading?: boolean
+  subtitlesError?: string
 }
 
 export interface AIConfig {
