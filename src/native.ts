@@ -29,6 +29,8 @@ import type {
 interface HttpInit {
   method?: string
   body?: unknown
+  /** 任务队列取消时中断在途请求。 */
+  signal?: AbortSignal
 }
 
 async function http<T>(path: string, init?: HttpInit): Promise<T> {
@@ -39,7 +41,8 @@ async function http<T>(path: string, init?: HttpInit): Promise<T> {
   const response = await fetch(path, {
     method: init?.method ?? (hasBody ? 'POST' : 'GET'),
     headers,
-    body: hasBody ? JSON.stringify(init?.body) : undefined
+    body: hasBody ? JSON.stringify(init?.body) : undefined,
+    signal: init?.signal
   })
 
   const text = await response.text()
@@ -180,7 +183,7 @@ export interface NativeBridge {
   fsRoots(): Promise<FsRoot[]>
   fsList(path: string): Promise<FsListing>
   pickFolder(): Promise<string | null>
-  organize(req: OrganizeRequest): Promise<OrganizeResult[]>
+  organize(req: OrganizeRequest, signal?: AbortSignal): Promise<OrganizeResult[]>
   findSubtitles(videoPath: string): Promise<SubtitleInfo[]>
   trash(paths: string[]): Promise<TrashResult>
   loadSettings(): Promise<Settings>
@@ -188,9 +191,14 @@ export interface NativeBridge {
   exportSettings(includeSecrets: boolean): Promise<SettingsExportFile>
   importSettings(payload: unknown): Promise<SettingsImportResult>
   aiTest(config: AIConfig): Promise<AITestResult>
-  aiIdentify(config: AIConfig, filename: string): Promise<AIIdentifyResult>
-  aiPick(config: AIConfig, filename: string, candidates: Candidate[]): Promise<AIPickResult>
-  javdbIdentify(filename: string, allowTitle?: boolean): Promise<Candidate[]>
+  aiIdentify(config: AIConfig, filename: string, signal?: AbortSignal): Promise<AIIdentifyResult>
+  aiPick(
+    config: AIConfig,
+    filename: string,
+    candidates: Candidate[],
+    signal?: AbortSignal
+  ): Promise<AIPickResult>
+  javdbIdentify(filename: string, allowTitle?: boolean, signal?: AbortSignal): Promise<Candidate[]>
   javdbDetail(id: string): Promise<Record<string, unknown>>
   coverSrc(url: string): Promise<string>
   coverCrop(url: string, crop: CropRect): Promise<string>
@@ -208,7 +216,8 @@ export interface NativeBridge {
     filename: string,
     mediaType: 'movie' | 'tv',
     apiKey: string,
-    lang?: string
+    lang?: string,
+    signal?: AbortSignal
   ): Promise<Candidate[]>
   tmdbDetail(
     id: string,
@@ -216,7 +225,7 @@ export interface NativeBridge {
     apiKey: string,
     lang?: string
   ): Promise<Record<string, unknown>>
-  bangumiIdentify(filename: string, token?: string): Promise<Candidate[]>
+  bangumiIdentify(filename: string, token?: string, signal?: AbortSignal): Promise<Candidate[]>
   bangumiDetail(id: string, token?: string): Promise<Record<string, unknown>>
   openPath(path: string): Promise<void>
   revealPath(path: string): Promise<void>
@@ -259,8 +268,8 @@ export const native: NativeBridge = {
     })
   },
 
-  organize(req) {
-    return http<OrganizeResult[]>('/api/organize', { body: req })
+  organize(req, signal) {
+    return http<OrganizeResult[]>('/api/organize', { body: req, signal })
   },
 
   async findSubtitles(videoPath) {
@@ -296,17 +305,24 @@ export const native: NativeBridge = {
     return http<AITestResult>('/api/ai/test', { body: { config } })
   },
 
-  aiIdentify(config, filename) {
-    return http<AIIdentifyResult>('/api/ai/identify', { body: { config, filename } })
+  aiIdentify(config, filename, signal) {
+    return http<AIIdentifyResult>('/api/ai/identify', {
+      body: { config, filename },
+      signal
+    })
   },
 
-  aiPick(config, filename, candidates) {
-    return http<AIPickResult>('/api/ai/pick', { body: { config, filename, candidates } })
+  aiPick(config, filename, candidates, signal) {
+    return http<AIPickResult>('/api/ai/pick', {
+      body: { config, filename, candidates },
+      signal
+    })
   },
 
-  async javdbIdentify(filename, allowTitle = false) {
+  async javdbIdentify(filename, allowTitle = false, signal) {
     const data = await http<{ candidates: Candidate[] }>('/api/plugins/javdb/identify', {
-      body: { filename, allowTitle }
+      body: { filename, allowTitle },
+      signal
     })
     return data.candidates ?? []
   },
@@ -390,9 +406,10 @@ export const native: NativeBridge = {
     return data.sources ?? []
   },
 
-  async tmdbIdentify(filename, mediaType, apiKey, lang) {
+  async tmdbIdentify(filename, mediaType, apiKey, lang, signal) {
     const data = await http<{ candidates: Candidate[] }>(`/api/plugins/${mediaType}/identify`, {
-      body: { filename, options: { apiKey, lang, mediaType } }
+      body: { filename, options: { apiKey, lang, mediaType } },
+      signal
     })
     return data.candidates ?? []
   },
@@ -403,9 +420,10 @@ export const native: NativeBridge = {
     })
   },
 
-  async bangumiIdentify(filename, token) {
+  async bangumiIdentify(filename, token, signal) {
     const data = await http<{ candidates: Candidate[] }>('/api/plugins/anime/identify', {
-      body: { filename, options: { token } }
+      body: { filename, options: { token } },
+      signal
     })
     return data.candidates ?? []
   },

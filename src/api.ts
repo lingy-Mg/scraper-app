@@ -66,12 +66,14 @@ export async function savePluginConfig(
 export async function identifyWithPlugin(
   pluginId: string,
   filename: string,
-  allowTitle = false
+  allowTitle = false,
+  signal?: AbortSignal
 ): Promise<{ candidates: unknown[] }> {
   const response = await fetch(`/api/plugins/${pluginId}/identify`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ filename, allowTitle })
+    body: JSON.stringify({ filename, allowTitle }),
+    signal
   })
   if (!response.ok) {
     // 保留后端的可操作错误信息（如 JavDB 需要登录），不要吞成通用文案。

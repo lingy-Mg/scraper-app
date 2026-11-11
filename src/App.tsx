@@ -9,6 +9,7 @@ import FilterBar from './components/FilterBar'
 import FileTable from './components/FileTable'
 import StatusBar from './components/StatusBar'
 import ScanProgressBar from './components/ScanProgressBar'
+import TaskControlBar from './components/TaskControlBar'
 import LogPanel from './components/LogPanel'
 import OrganizeModal from './components/OrganizeModal'
 import ConfigModal from './components/ConfigModal'
@@ -34,6 +35,7 @@ import { native, registerFolderPicker } from './native'
 import { useThemePreference } from './ThemeRoot'
 import { normalizeHiddenColumns } from './tableColumns'
 import { describeImportPayload } from './settingsTransfer'
+import { TaskQueue, type TaskQueueProgress } from './taskQueue'
 import type {
   AIConfig,
   AIIdentifyResult,
@@ -172,6 +174,46 @@ const mergeModeConfig = (base: ModeConfig, saved?: ModeConfig): ModeConfig =>
       }
     : base
 
+/** 批量刮削队列中的一条任务：待识别行或已有候选待选择行。 */
+interface ScrapeTask {
+  kind: 'pending' | 'review'
+  row: Row
+}
+
+interface QueueView {
+  kind: 'scrape' | 'organize'
+  label: string
+  progress: TaskQueueProgress
+}
+
+/** 任务队列的控制面；避免在 ref 中保存具体泛型。 */
+interface QueueControl {
+  pause(): void
+  resume(): void
+  cancel(): void
+}
+
+const createAbortError = (): Error => {
+  const error = new Error('已取消')
+  error.name = 'AbortError'
+  return error
+}
+
+const isAbortError = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  (error as { name?: unknown }).name === 'AbortError'
+
+/** 状态栏与任务条统一使用的进度文案。 */
+const formatQueueTask = (label: string, progress: TaskQueueProgress): string => {
+  const counts = `${progress.done}/${progress.total}${
+    progress.failed ? `（失败 ${progress.failed}）` : ''
+  }`
+  if (progress.state === 'paused') return `已暂停 · ${label} ${counts}`
+  if (progress.state === 'cancelled') return `已取消 · ${label} ${counts}`
+  return `${label} ${counts}`
+}
+
 export default function ScraperApp() {
   const { message, modal } = AntdApp.useApp()
   const {
@@ -221,6 +263,7 @@ export default function ScraperApp() {
   const pickerResolveRef = useRef<((path: string | null) => void) | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [task, setTask] = useState('空闲')
+  const [queueView, setQueueView] = useState<QueueView | null>(null)
   const [hydrated, setHydrated] = useState(false)
   const [scan, setScan] = useState<ScanState>({
     active: false,
@@ -246,6 +289,7 @@ export default function ScraperApp() {
   const libraryPausedRef = useRef(false)
   const resetBusyRef = useRef(false)
   const scanBusyRef = useRef(false)
+  const queueRef = useRef<QueueControl | null>(null)
   const scanRef = useRef<ScanState | null>(null)
   const scanBufferRef = useRef<MediaFile[]>([])
   const scanTimerRef = useRef<number | null>(null)
@@ -279,18 +323,21 @@ export default function ScraperApp() {
     modeKey === 'movie' || modeKey === 'tv' || modeKey === 'anime' ? modeKey : null
 
   /** 电影/电视剧走 TMDB，动漫走 Bangumi。 */
-  const identifyWithProvider = async (filename: string): Promise<Candidate[]> => {
+  const identifyWithProvider = async (
+    filename: string,
+    signal?: AbortSignal
+  ): Promise<Candidate[]> => {
     const kind = providerKind()
     if (!kind) return []
 
     if (kind === 'anime') {
-      const list = await native.bangumiIdentify(filename, mode.bangumiToken)
+      const list = await native.bangumiIdentify(filename, mode.bangumiToken, signal)
       return list.map((raw, index) => normalizeCandidate(raw, index))
     }
 
     const apiKey = (mode.tmdbApiKey || '').trim()
     if (!apiKey) throw new Error('未配置 TMDB API Key，请打开「配置…」填写后再刮削')
-    const list = await native.tmdbIdentify(filename, kind, apiKey, mode.tmdbLang)
+    const list = await native.tmdbIdentify(filename, kind, apiKey, mode.tmdbLang, signal)
     return list.map((raw, index) => normalizeCandidate(raw, index))
   }
 
@@ -794,7 +841,8 @@ export default function ScraperApp() {
 
   const autoPickOrReview = async (
     row: Row,
-    candidates: Candidate[]
+    candidates: Candidate[],
+    signal?: AbortSignal
   ): Promise<RowStatus> => {
     if (!(ai.enabled && ai.autoPick)) {
       patchRow(row.uid, { status: 'review', progress: 0, candidates })
@@ -805,7 +853,11 @@ export default function ScraperApp() {
     patchRow(row.uid, { status: 'running', progress: 30, candidates })
     pushLog('info', `${row.file} 有 ${candidates.length} 条候选，交给 AI 选择`)
     try {
-      const picked = await native.aiPick(ai, row.file, candidates)
+      const picked = await native.aiPick(ai, row.file, candidates, signal)
+      if (signal?.aborted) {
+        patchRow(row.uid, { status: 'review', progress: 0, candidates })
+        return 'review'
+      }
       const candidate = candidates.find((item) => item.id === picked.pick)
       if (!candidate) {
         patchRow(row.uid, { status: 'review', progress: 0, candidates })
@@ -828,12 +880,13 @@ export default function ScraperApp() {
       return 'review'
     } catch (error) {
       patchRow(row.uid, { status: 'review', progress: 0, candidates })
+      if (signal?.aborted || isAbortError(error)) return 'review'
       pushLog('warn', `AI 选择失败，保留待选择：${errText(error)}`)
       return 'review'
     }
   }
 
-  const processRow = async (row: Row): Promise<RowStatus> => {
+  const processRow = async (row: Row, signal?: AbortSignal): Promise<RowStatus> => {
     patchRow(row.uid, { status: 'running', progress: 10 })
     pushLog('info', `开始识别：${row.file}`)
     const started = performance.now()
@@ -843,48 +896,62 @@ export default function ScraperApp() {
 
     if (kind) {
       try {
-        candidates = await identifyWithProvider(row.file)
+        candidates = await identifyWithProvider(row.file, signal)
         if (candidates.length) {
           fromPlugin = true
           pushLog('ok', `${mode.name} 匹配 ${candidates.length} 条：${row.file}`)
         }
       } catch (error) {
         patchRow(row.uid, { status: 'unmatched', progress: 0 })
+        if (signal?.aborted || isAbortError(error)) return 'unmatched'
         providerErrorRef.current = errText(error)
         pushLog('warn', `元数据源识别失败：${errText(error)}`)
         return 'unmatched'
       }
     }
 
+    if (signal?.aborted) {
+      patchRow(row.uid, { status: 'unmatched', progress: 0 })
+      return 'unmatched'
+    }
+
     if (!fromPlugin && !kind && pluginSource === 'bun') {
       try {
-        const response = await identifyWithPlugin(String(modeKey), row.file)
+        const response = await identifyWithPlugin(String(modeKey), row.file, false, signal)
         candidates = (response.candidates || []).map((raw, index) =>
           normalizeCandidate(raw, index)
         )
         fromPlugin = candidates.length > 0
         pushLog('info', `插件返回 ${candidates.length} 条候选：${row.file}`)
       } catch (error) {
+        if (signal?.aborted || isAbortError(error)) {
+          patchRow(row.uid, { status: 'unmatched', progress: 0 })
+          return 'unmatched'
+        }
         pushLog('warn', `插件识别失败，回退 AI：${errText(error)}`)
       }
     }
 
     if (!fromPlugin && !kind) {
       try {
-        const found = await native.javdbIdentify(row.file)
+        const found = await native.javdbIdentify(row.file, false, signal)
         candidates = found.map((raw, index) => normalizeCandidate(raw, index))
         if (candidates.length) {
           fromPlugin = true
           pushLog('ok', `JavDB 匹配 ${candidates.length} 条：${row.file}`)
         }
       } catch (error) {
+        if (signal?.aborted || isAbortError(error)) {
+          patchRow(row.uid, { status: 'unmatched', progress: 0 })
+          return 'unmatched'
+        }
         pushLog('warn', `JavDB 识别失败，回退 AI：${errText(error)}`)
       }
     }
 
     if (!fromPlugin) {
       try {
-        const result = await native.aiIdentify(ai, row.file)
+        const result = await native.aiIdentify(ai, row.file, signal)
         const requireCode = ['av', 'javdb'].includes(modeKey as string)
         const usable = requireCode ? Boolean(result.code) : Boolean(result.code || result.title)
         candidates = usable ? [candidateFromAI(row, result)] : []
@@ -897,9 +964,15 @@ export default function ScraperApp() {
         )
       } catch (error) {
         patchRow(row.uid, { status: 'unmatched', progress: 0 })
+        if (signal?.aborted || isAbortError(error)) return 'unmatched'
         pushLog('warn', `识别失败：${row.file} · ${errText(error)}`)
         return 'unmatched'
       }
+    }
+
+    if (signal?.aborted) {
+      patchRow(row.uid, { status: 'unmatched', progress: 0 })
+      return 'unmatched'
     }
 
     const elapsed = Math.round(performance.now() - started)
@@ -920,7 +993,7 @@ export default function ScraperApp() {
     }
 
     patchRow(row.uid, { status: 'review', progress: 0, candidates, query: row.title })
-    return autoPickOrReview(row, candidates)
+    return autoPickOrReview(row, candidates, signal)
   }
 
   const startScrape = async () => {
@@ -928,7 +1001,11 @@ export default function ScraperApp() {
       message.warning('请先选择文件夹')
       return
     }
-    if (task !== '空闲') {
+    if (scan.active) {
+      message.info('正在扫描中，请稍候')
+      return
+    }
+    if (task !== '空闲' || queueRef.current) {
       message.info('当前有任务进行中')
       return
     }
@@ -941,52 +1018,94 @@ export default function ScraperApp() {
       return
     }
 
-    const total = pending.length + reviews.length
-    let index = 0
-    let done = 0
+    const tasks: ScrapeTask[] = [
+      ...pending.map((row): ScrapeTask => ({ kind: 'pending', row })),
+      ...reviews.map((row): ScrapeTask => ({ kind: 'review', row }))
+    ]
+    const pendingUids = new Set(pending.map((row) => row.uid))
+    const total = tasks.length
+    let completed = 0
+    let reviewed = 0
     providerErrorRef.current = ''
-    setTask(`刮削中 0/${total}`)
-    pushLog('info', `开始刮削：${total} 个文件`)
+    pushLog('info', `开始刮削：${total} 个文件（并发 3）`)
     if (pending.length) {
       setRows((prev) =>
         prev.map((row) =>
-          pending.some((item) => item.uid === row.uid)
-            ? { ...row, status: 'waiting', progress: 0 }
-            : row
+          pendingUids.has(row.uid) ? { ...row, status: 'waiting', progress: 0 } : row
         )
       )
     }
 
-    for (const row of pending) {
-      const status = await processRow(row)
-      if (status === 'done') done += 1
-      index += 1
-      setTask(`刮削中 ${index}/${total}`)
-    }
-
-    for (const row of reviews) {
-      if (!row.candidates?.length) {
-        patchRow(row.uid, { status: 'unmatched', progress: 0 })
-        index += 1
-        setTask(`刮削中 ${index}/${total}`)
-        continue
+    const queue = new TaskQueue<ScrapeTask, RowStatus>(
+      tasks,
+      async (task, signal) => {
+        const status =
+          task.kind === 'pending'
+            ? await processRow(task.row, signal)
+            : task.row.candidates?.length
+              ? await autoPickOrReview(task.row, task.row.candidates, signal)
+              : (patchRow(task.row.uid, { status: 'unmatched', progress: 0 }), 'unmatched')
+        // 取消时中止的在途任务不计入失败；已经完成的结果仍然保留。
+        if (signal.aborted && status !== 'done') throw createAbortError()
+        return status
+      },
+      {
+        concurrency: 3,
+        isFailure: (status) => status === 'unmatched',
+        onProgress: (progress) => {
+          setQueueView({ kind: 'scrape', label: '刮削', progress })
+          setTask(formatQueueTask('刮削', progress))
+        },
+        onTaskDone: (_task, status) => {
+          if (status === 'done') completed += 1
+          else if (status === 'review') reviewed += 1
+        },
+        onTaskError: (task, error) => {
+          if (isAbortError(error)) return
+          pushLog('warn', `刮削失败：${task.row.file} · ${errText(error)}`)
+        }
       }
-      const status = await autoPickOrReview(row, row.candidates)
-      if (status === 'done') done += 1
-      index += 1
-      setTask(`刮削中 ${index}/${total}`)
-    }
+    )
 
-    setTask('空闲')
-    if (done) {
-      setNote(`刮削结束：完成 ${done} / 共 ${total}`)
-      message.success(`刮削完成：${done} 个文件`)
-    } else if (providerErrorRef.current) {
-      setNote(providerErrorRef.current)
-      message.warning(providerErrorRef.current)
-    } else {
-      setNote(`刮削结束：完成 0 / 共 ${total}`)
-      message.info('刮削结束，没有自动完成的文件')
+    queueRef.current = queue
+    try {
+      const final = await queue.start()
+      // 取消后：从未开始的行恢复为待处理；已完成行与媒体库记录不回滚。
+      if (final.state === 'cancelled') {
+        setRows((prev) =>
+          prev.map((row) =>
+            pendingUids.has(row.uid) && row.status === 'waiting'
+              ? { ...row, status: 'unmatched', progress: 0 }
+              : row
+          )
+        )
+      }
+      const cancelled = Math.max(0, final.total - final.done - final.failed)
+      const failed = final.failed
+      if (final.state === 'cancelled') {
+        const summary = `刮削已取消：完成 ${completed} / 共 ${total}${
+          failed ? `（失败 ${failed}）` : ''
+        }${cancelled ? ` · 未开始 ${cancelled}` : ''}`
+        setNote(summary)
+        pushLog('warn', summary)
+        message.warning('刮削已取消')
+      } else if (completed) {
+        const summary = `刮削结束：完成 ${completed} / 共 ${total}${
+          failed ? `（失败 ${failed}）` : ''
+        }${reviewed ? ` · 待选择 ${reviewed}` : ''}`
+        setNote(summary)
+        if (failed) message.warning(`刮削完成：${completed} 个文件，${failed} 个失败`)
+        else message.success(`刮削完成：${completed} 个文件`)
+      } else if (providerErrorRef.current) {
+        setNote(providerErrorRef.current)
+        message.warning(providerErrorRef.current)
+      } else {
+        setNote(`刮削结束：完成 0 / 共 ${total}${failed ? `（失败 ${failed}）` : ''}`)
+        message.info('刮削结束，没有自动完成的文件')
+      }
+    } finally {
+      queueRef.current = null
+      setTask('空闲')
     }
   }
 
@@ -2048,6 +2167,20 @@ export default function ScraperApp() {
       />
 
       <ScanProgressBar scan={scan} path={folder} />
+
+      {queueView &&
+        (queueView.progress.state === 'running' ||
+          queueView.progress.state === 'paused' ||
+          queueView.progress.state === 'cancelled') && (
+          <TaskControlBar
+            label={queueView.label}
+            progress={queueView.progress}
+            onPause={() => queueRef.current?.pause()}
+            onResume={() => queueRef.current?.resume()}
+            onCancel={() => queueRef.current?.cancel()}
+            onDismiss={() => setQueueView(null)}
+          />
+        )}
 
       <div ref={wrapRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <FileTable

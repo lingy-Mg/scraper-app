@@ -1004,6 +1004,120 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 批量任务控制条（刮削 / 整理） */
+.taskbar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 12px 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--scanbar-bg);
+}
+.taskbar-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.taskbar-title {
+  color: var(--text);
+  font-weight: 500;
+}
+.taskbar-state {
+  padding: 0 6px;
+  border-radius: 3px;
+  background: var(--blue-bg);
+  color: var(--blue-text);
+  font-size: 10px;
+  line-height: 16px;
+}
+.taskbar-paused .taskbar-state {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+.taskbar-cancelled .taskbar-state {
+  background: var(--bg-hover);
+  color: var(--muted-2);
+}
+.taskbar-meta {
+  font-variant-numeric: tabular-nums;
+}
+.taskbar-meta b {
+  font-weight: 500;
+  color: var(--text);
+}
+.taskbar-failed {
+  color: var(--red);
+}
+.taskbar-percent {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-2);
+}
+.taskbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.taskbar-actions .ant-btn {
+  font-size: 11px;
+  height: 22px;
+  padding: 0 7px;
+}
+.taskbar-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.taskbar-track i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #4f8ff7, var(--blue));
+  transition: width 0.25s ease;
+}
+.taskbar-cancelled .taskbar-track i {
+  background: var(--muted-2);
+}
+
+/* OrganizeModal 内的队列进度与结果汇总 */
+.organize-progress,
+.organize-summary {
+  margin-top: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  font-size: 11px;
+  color: var(--muted);
+}
+.organize-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.organize-progress b,
+.organize-summary b {
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.organize-progress .grow {
+  flex: 1;
+}
+.organize-summary .bad {
+  color: var(--red);
+}
+.organize-summary .warn {
+  color: var(--amber);
+}
 .scan-empty {
   display: flex;
   align-items: center;
