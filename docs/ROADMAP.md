@@ -16,16 +16,20 @@
 - [x] 短片默认隐藏、阈值可调、清理弹窗文件列表与勾选
 - [x] 日志面板默认展开、拖动高度、持久化
 - [x] 整理写 NFO + 封面
+- [x] 磁力面板（详情弹窗展示 + 复制）；上游 JavDB 需登录，已支持令牌
 - [x] AGENTS.md / AI_HANDOFF / 契约文档
 
 ## 待办（按优先级）
 
-### P1 磁力面板
+### P1 磁力面板（已完成）
 
-- 数据已具备：`POST /api/plugins/javdb/resolve` 返回 `magnets[]`（`name/hash/size/cnsub/hd/files_count/pikpak_url`）
-- 计划：PosterModal 增加「磁力」区块，显示大小/字幕/高清标记与复制磁力链接
-- 验收：打开详情能加载磁力列表；复制按钮可用；失败有提示
-- 注意：只做元数据展示与复制，不内置下载器
+- [x] 数据来源：`POST /api/plugins/javdb/resolve` 返回 `magnets[]`（插件转 camelCase：`name/hash/size/cnsub/hd/filesCount/pikpakUrl`）
+- [x] `PosterModal` 增加「磁力」区块，显示名称/大小/中文字幕/高清/文件数
+- [x] 单条复制与「复制全部」，链接格式 `magnet:?xt=urn:btih:<hash>&dn=<encodeURIComponent(name)>`
+- [x] 剪贴板不可用时降级为只读文本框手动复制
+- [x] 无数据显示「暂无磁力数据」；鉴权失败显示「请填写访问令牌」提示
+- [x] 上游 JavDB 需登录，已支持令牌（插件设置 → 访问令牌；详见下方 2026-11-11 记录）
+- 注意：只做元数据展示与复制，不内置下载器、不调用下载接口
 
 ### P2 预告片与字幕
 
@@ -101,6 +105,17 @@
 - [x] 用户插件目录 `server/data/plugins/`，同 id 覆盖内置，缺失时静默跳过
 - [x] 新增 `docs/plugin-contract.md` 并同步接口文档
 - 验证：`npx tsc --noEmit`、`bun build server/index.ts`；`GET /api/plugins` 5 个插件；旧路由 404；修改非入口文件后 reload 生效
+
+## 2026-11-11 JavDB 登录与磁力面板
+
+- [x] 上游四个镜像要求登录（`JWTVerificationError: 請登錄帳號`）；不做任何绕过
+- [x] JavDB / AV 插件设置新增可选「访问令牌」：有值时发送 `authorization: Bearer <token>`，空值匿名
+- [x] 令牌只保存在 `server/data/config.json`，接口回显脱敏，不写日志
+- [x] 鉴权失败返回可操作中文提示（区分「未填写」与「已失效」）
+- [x] 详情弹窗磁力列表：名称 tooltip、大小、中文字幕、高清、文件数；单条复制 / 复制全部
+- [x] 复制失败降级只读文本框；无数据与鉴权失败状态分开
+- [x] `.plugin-cache` 每插件保留最新 2 个打包产物，当前使用中的文件不删除
+- 验证：`npx tsc --noEmit`、`bun build server/index.ts`、`npm run build`；mock fetch 验证 Bearer 请求头与提示文案；临时 mock resolve 返回磁力并经组件 SSR 渲染；重启后缓存 36 → 12 个文件
 
 ## 2026-11-11 文件名黑名单
 

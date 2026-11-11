@@ -245,6 +245,9 @@ export interface AIPickResult {
 - `Candidate` 额外字段：`posterUrl`、`maker`、`actors`、`duration`、`detailId`。
 - 识别优先级：插件 `identify` → AI/正则。
 - 封面必须经 `/api/cover`（可选裁剪参数）解码后显示，禁止直接加载远程图片。
+- 上游现在要求登录：用户可在 JavDB / AV 插件设置填写 `token`（JWT），插件从 `ctx.config.token` 读取并附加 `authorization: Bearer <token>`；令牌只存 `server/data/config.json`，接口回显脱敏，不写日志。
+- 鉴权失败返回可操作中文提示（未填写 / 已失效），前端不得显示成「暂无数据」。
+- `resolve` 的 `magnets[]` 已转 camelCase：`name / hash / size / cnsub / hd / filesCount / pikpakUrl`。详情弹窗按需拉取，只展示与复制，不调用下载接口。
 
 ## 5. Bun HTTP 接口
 
@@ -274,7 +277,7 @@ export interface AIPickResult {
 | GET | `/api/plugins` | — | 插件清单（含 `capabilities`、`status`、`error`、`source`） |
 | POST | `/api/plugins/reload` | — | `{ ok, count }` |
 | POST | `/api/plugins/:id/reload` | — | 插件描述 |
-| GET/PUT | `/api/plugins/:id/config` | `Partial<PluginConfig>` | `PluginConfig` |
+| GET/PUT | `/api/plugins/:id/config` | `Partial<PluginConfig>` | `PluginConfig`（`token` 脱敏为 `••••••••`） |
 | POST | `/api/plugins/:id/identify` | `{ filename, allowTitle?, options? }` | `{ candidates: Candidate[] }` |
 | POST | `/api/plugins/:id/resolve` | `{ candidateId, options? }` | 插件返回的详情对象 |
 | GET | `/plugins/:id/settings/` | — | 设置页静态资源 |

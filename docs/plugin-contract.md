@@ -82,6 +82,27 @@ server/data/plugins/
 | `defaults` | 是 | 插件默认配置，用户覆盖存于 `server/data/config.json` |
 | `order` | 否 | 模式栏排序，默认 100 |
 
+### 2.1 配置字段与密钥
+
+`defaults` 与用户覆盖合并后注入 `ctx.config`。除通用的 `lang/sources/downloads/naming/organize` 外，插件可声明自己的字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `token` | `string` | JavDB / AV 访问令牌（JWT，可选）。为空时匿名请求；有值时发送 `authorization: Bearer <token>` |
+
+- `token` 只写入 `server/data/config.json`（已 gitignore），**不写日志、不回显明文**。
+- `GET /api/plugins`、`GET /api/plugins/:id/config`、`PUT /api/plugins/:id/config` 返回的 `token` 统一脱敏为 `••••••••`。
+- `PUT` 时：省略 `token` 或传脱敏占位符 → 保持原值；传非空字符串 → 覆盖；传空字符串 → 清除。
+- 新增密钥类字段时，在 `server/registry.ts` 的 `SECRET_FIELDS` 登记，即可自动脱敏。
+
+### 2.2 设置页与扩展方式
+
+- 默认设置页：`server/plugins/_shared/settings.html`，由 `PluginSettingsModal` 以 iframe 加载；保存走 `PUT /api/plugins/:id/config`。
+- 通用设置页会根据配置中是否存在某个键决定是否显示扩展项：
+  - `token` 存在时显示「访问令牌」输入框（`type=password`，不回显，留空表示不修改）。
+- 需要完全自定义界面时，在插件目录放 `settings.html`；路由 `/plugins/<id>/settings/` 的查找顺序为：用户目录 → 内置插件目录 → `_shared/settings.html`。
+- 设置页只合并用户可编辑字段，插件 `defaults` 仍是回退值。
+
 插件入口默认导出对象：
 
 ```ts
@@ -117,7 +138,8 @@ POST /api/plugins/javdb/identify
 ```
 
 - `allowTitle` 仅 AV / JavDB 使用：默认只认番号，`true` 时才允许按标题搜索。
-- `options` 为通用透传字段，插件自行解释（如 `apiKey`、`token`、`lang`、`mediaType`）。
+- `options` 为通用透传字段，插件自行解释（如 `apiKey`、`lang`、`mediaType`）；JavDB 令牌从 `ctx.config.token` 读取，不走 `options`。
+- 上游 JavDB 现在要求登录；令牌缺失 / 失效时错误信息为可操作中文提示，不会返回英文异常堆栈。
 
 ### 3.2 resolve
 
@@ -128,6 +150,7 @@ POST /api/plugins/javdb/resolve
 
 - 直接返回插件的结果对象（JavDB 含 `magnets`，TMDB/Bangumi 含 `raw` 等），不额外包一层。
 - `candidateId` 一般来自同一插件 `identify` 返回的 `id` 或 `detailId`。
+- JavDB 的 `magnets[]` 字段（插件已转 camelCase）：`name / hash / size / cnsub / hd / filesCount / pikpakUrl`；前端只做展示与复制，不调用下载接口。
 
 ## 4. 插件上下文 ctx
 
@@ -164,6 +187,8 @@ AI 是**通用回退引擎，不是刮削站**，保持为共享服务 `server/a
    `server/data/.plugin-cache/<id>-<source>-<hash>.mjs`。
 2. `hash` 由内置 + 用户插件根目录内文件的 `mtime + size` 汇总；未变化时复用缓存。
 3. 打包产物通过 `import(路径 + '?v=<generation>')` 加载，避免命中模块缓存。
+   - 每次加载 / 重载后按 `id-source` 只保留最新 **2** 个 `.mjs`；当前正在使用的产物无论新旧都不会被删除。
+   - 删除失败（文件被占用）时跳过，下次加载再清理。
 4. 修改插件目录内任意 `.ts`（入口或非入口）后：
    - `POST /api/plugins/:id/reload`（或 `/api/plugins/reload`）立即生效；
    - 开发期文件监听会在约 320ms 后自动重载；`_shared/` 变动会重载全部插件。

@@ -23,7 +23,9 @@
 | NFO + 封面随整理写入 | ✅ | `server/files.ts`、`src/utils.ts` |
 | 网页内目录选择器 | ✅ | `src/components/FolderPickerModal.tsx`、`server/index.ts` |
 | 单进程托管前端 + API | ✅ | `server/index.ts`、`scripts/start.mjs` |
-| 磁力链接 UI / 预告片 / 字幕下载 | ❌ | 见 ROADMAP |
+| JavDB 访问令牌（可选，脱敏保存） | ✅ | `server/plugins/javdb/`、`registry.ts`、`_shared/settings.html` |
+| 磁力面板（详情展示 / 复制） | ✅ | `src/components/MagnetList.tsx`、`PosterModal.tsx` |
+| 预告片 / 字幕下载 | ❌ | 见 ROADMAP |
 
 ## 2. 进程与通道
 
@@ -46,6 +48,7 @@ src/
     TitleBar/MenuBar/Toolbar/ModeBar/FilterBar/FileTable
     StatusBar/LogPanel/OrganizeModal/ConfigModal/AIConfigModal
     CandidateModal/PosterModal/PluginSettingsModal
+    MagnetList                # 磁力列表 + 复制 / 手动复制降级
     FolderPickerModal         # 网页内目录选择
 server/
   index.ts                    # Bun HTTP + /ws + 插件资源 + dist 静态托管
@@ -105,6 +108,12 @@ interface Settings {
 `ModeConfig` 额外包含：`tmdbApiKey`、`tmdbLang`、`bangumiToken`（按模式保存）。
 插件调用时通过 `ctx.modeConfig` 读取这些值；语言与 `sources` 开关以插件自身 `ctx.config` 为准。
 
+JavDB / AV 访问令牌不走 `Settings.modes`，而是插件配置 `token`：
+
+- 存储于 `server/data/config.json` 的对应插件配置下，不进 `settings.json`、不进仓库。
+- `GET/PUT /api/plugins/:id/config` 与 `GET /api/plugins` 回显时脱敏为 `••••••••`。
+- 插件从 `ctx.config.token` 读取；为空时匿名请求，有值时发送 `authorization: Bearer <token>`。
+
 存储位置（开发与生产共用）：
 
 - `server/data/settings.json`
@@ -140,6 +149,8 @@ CREATE TABLE items (
 ### JavDB
 
 - 协议全文：`docs/javdb-app-api.md`
+- **上游当前要求登录**：四个镜像可能返回 `JWTVerificationError: 請登錄帳號`。插件支持用户在「插件设置 → 访问令牌」填写自己的 JWT；有值时附加 `authorization: Bearer <token>`，不做任何鉴权绕过。
+- 令牌只存 `server/data/config.json`，接口回显脱敏、不写日志；缺失时提示填写，失效时提示更新。
 - 签名：`jdsignature = ts.suffix.md5(ts + prefix)`，常量对应 App 1.9.28
 - host：`jdforrepam.com` → `apidd.spthgb.com` → `apidd.czssdgz.com` → `javdb.com`
 - `duration` 是**分钟**，入 `Candidate.duration` / `Row.dur` 时 ×60
@@ -203,6 +214,7 @@ CREATE TABLE items (
 - **扫描进度**：扫描分 `walk`（枚举）→ `probe`（读时长）两阶段；走 `/api/scan` 的 NDJSON 流；`src/components/ScanProgressBar.tsx` 显示进度与当前位置，`App.tsx` 每 200ms 批量把 `files` 合并进表格；扫描期间暂停媒体库落库
 - **文件名黑名单**：`Settings.blacklist` 按文件名（不含目录）屏蔽 BT 附带文件；不区分大小写，`*`/`?` 通配符，无通配符按包含匹配。两份实现（`src/utils.ts` 的 `isBlacklisted`、`server/scan.ts`），改动必须同步。扫描时在 `walk` 阶段直接跳过；已加载的命中行从表格/计数/刮削/整理/清理中排除；右键行可拉黑，`BlacklistModal` 可增删规则。只隐藏，不删除文件
 - **目录选择**：`native.pickFolder()` 打开 `FolderPickerModal`，通过 `/api/fs/roots` 与 `/api/fs/list` 浏览真实目录，不调用系统文件夹对话框。
+- **磁力面板**：打开详情弹窗时，JavDB / AV 行按 `detailId` 调用 `POST /api/plugins/:id/resolve`，取 `magnets[]` 存到行内（不写媒体库）。`MagnetList` 只做展示与复制：名称超长省略 + tooltip，显示大小/中文字幕/高清/文件数；单条与全部复制；剪贴板不可用时弹只读文本框。无数据显示「暂无磁力数据」，鉴权失败显示令牌提示。**不得内置下载器或调用下载接口**。
 
 ## 9. 验证与测试
 
@@ -224,6 +236,8 @@ npm run build
 8. 重载页面，确认媒体库记录与模式恢复。
 9. 选一个大目录（数百个视频）：立刻出现进度条与当前文件，行数持续增长；进度到 100% 后表格排序稳定。
 10. 右键任意行「拉黑此文件名」：该行立即隐藏；`文件 → 文件名黑名单…` 里确认规则；重新扫描时该文件不再出现；媒体库记录会在下次 replace 扫描时清理。
+11. 打开一个 JavDB / AV 已匹配行的详情：应加载磁力列表；未填令牌时显示「JavDB 需要登录：请在 JavDB 插件设置中填写访问令牌」，而不是「暂无磁力数据」。
+12. 在插件设置填写令牌后重启：`GET /api/plugins/javdb/config` 的 `token` 应为 `••••••••`；`server/data/config.json` 中保存明文（仅本机）。
 
 ## 10. 运行与交付（B/S 单端）
 

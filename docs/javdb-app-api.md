@@ -47,7 +47,7 @@ jdsignature = `${ts}.${suffix}.${md5(ts + prefix)}`
 ```
 user-agent: Dart/3.4 (dart:io)
 accept-language: en        // 或 zh-CN / zh-TW
-authorization: Bearer <JWT>  // 可选；搜索/详情/磁力匿名可用
+authorization: Bearer <JWT>  // 用户自行提供；2026-11-11 起上游要求登录
 ```
 
 ### 2.3 公共 query 参数（每个请求都带）
@@ -78,7 +78,7 @@ device_uuid=<稳定 UUID，自己生成一次并持久化>
 | GET | `/api/v1/startup` | 启动配置、动态域名、用户信息 |
 | GET | `/api/v2/search?q=&page=&limit=` | **按番号/关键词搜索** |
 | GET | `/api/v4/movies/{id}` | 影片详情 |
-| GET | `/api/v1/movies/{id}/magnets` | 磁力列表（匿名可用） |
+| GET | `/api/v1/movies/{id}/magnets` | 磁力列表（当前需登录令牌） |
 | GET | `/api/v1/movies/{id}/reviews?page=&limit=` | 评论 |
 | GET | `/api/v1/movies/tags?filter_by=&sort_by=&order_by=&page=&limit=` | 分类浏览 |
 | GET | `/api/v2/tags?type=` | 标签目录（`type` 0/1/2/3） |
@@ -134,7 +134,19 @@ DETAIL  /api/v4/movies/ZY5eq       200 success=1  (movie 字段齐全)
 MAGNETS /api/v1/movies/ZY5eq/magnets 200 success=1  count=26
 ```
 
-说明当前协议仍然有效，且**搜索/详情/磁力无需登录**。
+说明当时协议有效，且搜索/详情/磁力无需登录。
+
+### 3.3 2026-11-11 变更：上游要求登录
+
+四个固定镜像现在均可能返回：
+
+```json
+{ "success": 0, "action": "JWTVerificationError", "message": "請登錄帳號" }
+```
+
+- 请求头 `authorization: Bearer <JWT>`（`POST /api/v1/sessions` 登录后返回的 `token`）是上游支持的正式方式。
+- 本项目**不做任何鉴权绕过**：由用户在 JavDB / AV 插件设置中填写自己的令牌，缺失时保持匿名请求。
+- 插件不会记录或回显令牌明文；鉴权失败时转为可操作中文提示，而不是抛出上游堆栈。
 
 ## 4. 可直接用的最小 TypeScript 客户端
 
