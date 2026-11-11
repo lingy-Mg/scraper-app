@@ -429,8 +429,10 @@ export async function javdbDetail(
   let magnets: ReturnType<typeof toMagnet>[] = []
   try {
     magnets = await movieMagnets(id, token?.trim() || undefined)
-  } catch {
-    // 磁力失败不影响详情
+  } catch (error) {
+    // 磁力失败一般不影响详情；但鉴权失败要让前端显示可操作提示。
+    const message = error instanceof Error ? error.message : String(error)
+    if (/JavDB (需要登录|登录已失效)/.test(message)) throw error
   }
   return { ...movie, magnets }
 }

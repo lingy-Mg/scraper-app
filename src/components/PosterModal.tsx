@@ -2,6 +2,7 @@ import { Button, Modal } from 'antd'
 import { ScissorOutlined, UndoOutlined } from '@ant-design/icons'
 import type { Row } from '../types'
 import { fmtDur } from '../utils'
+import MagnetList from './MagnetList'
 
 const BG = [
   'linear-gradient(150deg,#4a5570,#232a38)',
@@ -104,6 +105,11 @@ export default function PosterModal({ row, onClose, onCrop, onReset }: Props) {
                 </div>
               )}
             </div>
+            <MagnetList
+              magnets={row.magnets}
+              loading={row.magnetsLoading}
+              error={row.magnetsError}
+            />
           </div>
         </>
       )}

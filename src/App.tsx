@@ -20,7 +20,13 @@ import CoverCropModal from './components/CoverCropModal'
 import BlacklistModal from './components/BlacklistModal'
 import FolderPickerModal from './components/FolderPickerModal'
 import { INITIAL_AI, INITIAL_MODES } from './data'
-import { fetchPlugins, identifyWithPlugin, reloadPlugins, toModeConfig } from './api'
+import {
+  fetchPlugins,
+  identifyWithPlugin,
+  reloadPlugins,
+  resolveWithPlugin,
+  toModeConfig
+} from './api'
 import { native, registerFolderPicker } from './native'
 import type {
   AIConfig,
@@ -30,6 +36,7 @@ import type {
   CropRect,
   FilterKey,
   LogLine,
+  Magnet,
   MediaFile,
   ModeConfig,
   ModeKey,
@@ -100,6 +107,30 @@ const normalizeCandidate = (raw: unknown, index: number): Candidate => {
     director: typeof item.director === 'string' && item.director ? item.director : undefined,
     series: typeof item.series === 'string' && item.series ? item.series : undefined
   }
+}
+
+/** 兼容插件返回的 camelCase 与上游原始 snake_case 字段。 */
+const normalizeMagnets = (raw: unknown): Magnet[] => {
+  if (!Array.isArray(raw)) return []
+  const out: Magnet[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const item = entry as Record<string, unknown>
+    const hash = typeof item.hash === 'string' ? item.hash.trim() : ''
+    if (!hash) continue
+    const files = item.filesCount ?? item.files_count
+    const pikpak = item.pikpakUrl ?? item.pikpak_url
+    out.push({
+      name: typeof item.name === 'string' && item.name ? item.name : hash,
+      hash,
+      size: typeof item.size === 'string' && item.size ? item.size : undefined,
+      cnsub: item.cnsub === true,
+      hd: item.hd === true,
+      filesCount: typeof files === 'number' ? files : Number(files) || 0,
+      pikpakUrl: typeof pikpak === 'string' && pikpak ? pikpak : undefined
+    })
+  }
+  return out
 }
 
 const candidateFromAI = (row: Row, result: AIIdentifyResult): Candidate => ({
@@ -1349,6 +1380,35 @@ export default function ScraperApp() {
     }
   }
 
+  /** 详情弹窗打开时按需拉取磁力；JavDB / AV 之外的插件没有磁力。 */
+  const loadMagnets = async (row: Row) => {
+    if (!row.detailId) return
+    const pluginId = [row.mode, String(modeKey)].find(
+      (id) => id === 'av' || id === 'javdb'
+    )
+    if (!pluginId) return
+    const apply = (patch: Partial<Row>) => {
+      patchRow(row.uid, patch)
+      setPosterRow((prev) => (prev && prev.uid === row.uid ? { ...prev, ...patch } : prev))
+    }
+    apply({ magnetsLoading: true, magnetsError: undefined })
+    try {
+      const detail = await resolveWithPlugin(pluginId, `javdb:${row.detailId}`)
+      apply({
+        magnets: normalizeMagnets(detail.magnets),
+        magnetsLoading: false,
+        magnetsError: undefined
+      })
+    } catch (error) {
+      apply({ magnetsLoading: false, magnetsError: errText(error) })
+    }
+  }
+
+  const openPoster = (row: Row) => {
+    setPosterRow(row)
+    if (!row.magnets && !row.magnetsLoading) void loadMagnets(row)
+  }
+
   const openRow = async (row: Row) => {
     const target = filePath(row)
     if (!target) {
@@ -1730,7 +1790,7 @@ export default function ScraperApp() {
           scanning={scan.active}
           scanFound={scan.found}
           onSelectedChange={setSelected}
-          onPoster={setPosterRow}
+          onPoster={openPoster}
           onRemove={removeRow}
           onMatch={(row) => void aiIdentifyRow(row)}
           onReview={setReviewRow}

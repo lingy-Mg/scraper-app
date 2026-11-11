@@ -159,6 +159,17 @@ export interface LibraryItem {
   updatedAt?: number
 }
 
+/** JavDB resolve 返回的磁力条目（插件已转为 camelCase）。 */
+export interface Magnet {
+  name: string
+  hash: string
+  size?: string
+  cnsub?: boolean
+  hd?: boolean
+  filesCount?: number
+  pikpakUrl?: string
+}
+
 export interface Candidate {
   id: string
   title: string
@@ -270,6 +281,10 @@ export interface Row {
   series?: string
   /** 该行所属模式，用于媒体库持久化。 */
   mode?: string
+  /** 详情弹窗的磁力列表（仅展示与复制，不触发下载）。 */
+  magnets?: Magnet[]
+  magnetsLoading?: boolean
+  magnetsError?: string
 }
 
 export interface AIConfig {
