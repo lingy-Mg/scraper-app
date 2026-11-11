@@ -5,7 +5,6 @@ import {
   makeMediaDir,
   MEDIA_ROOT,
   pickFolderByPath,
-  removeMediaDir,
   scanbarWasSeen,
   waitForScanIdle
 } from './helpers'
@@ -28,10 +27,6 @@ test.describe('目录扫描链路', () => {
       'types.d.ts',
       '.hidden/SECRET-999.mp4'
     ])
-  })
-
-  test.afterAll(() => {
-    removeMediaDir(MEDIA_NAME)
   })
 
   test('手动输入目录后扫描，进度条出现并消失，表格出现视频行', async ({ page }) => {

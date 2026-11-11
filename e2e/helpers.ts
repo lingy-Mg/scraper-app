@@ -118,10 +118,22 @@ export async function pickFolderByPath(page: Page, path: string): Promise<void> 
   await expect(modal).toBeHidden()
 }
 
-/** 等待扫描进度条消失、任务回到空闲。 */
-export async function waitForScanIdle(page: Page): Promise<void> {
-  await expect(page.locator('.scanbar')).toHaveCount(0)
-  await expect(page.locator('.statusbar')).not.toContainText('扫描中')
+/**
+ * 等待扫描结束并稳定一段时间：既避免进度条卸载的竞态，也避免启动时
+ * 「设置加载 → 自动重扫上次目录」在断言之后才启动。
+ */
+export async function waitForScanIdle(page: Page, settleMs = 500): Promise<void> {
+  const deadline = Date.now() + 30_000
+  let stable = 0
+  while (Date.now() < deadline) {
+    const status = (await page.locator('.statusbar').textContent()) ?? ''
+    const busy = (await page.locator('.scanbar').count()) > 0 || /扫描中/.test(status) || !/任务 · 空闲/.test(status)
+    if (busy) stable = 0
+    else stable += 100
+    if (stable >= settleMs) return
+    await page.waitForTimeout(100)
+  }
+  throw new Error('等待扫描结束超时（30s）')
 }
 
 /** 记录扫描进度条是否曾出现过（扫描很快时避免竞态）。 */
@@ -170,8 +182,4 @@ export function makeMediaDir(name: string, files: string[]): string {
     writeFileSync(full, `e2e fixture: ${file}\n`)
   }
   return dir
-}
-
-export function removeMediaDir(name: string): void {
-  rmSync(resolve(MEDIA_ROOT, name), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
