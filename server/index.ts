@@ -47,6 +47,7 @@ import {
   type OrganizeRequest
 } from './files'
 import { findSubtitles } from './subtitles'
+import { addSource, listSources, removeSource } from './sources'
 import { HttpError, listFsDirectories, listFsRoots } from './fs'
 
 export {
@@ -70,7 +71,7 @@ await loadAll()
 
 const corsHeaders = {
   'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET,PUT,POST,OPTIONS',
+  'access-control-allow-methods': 'GET,PUT,POST,DELETE,OPTIONS',
   'access-control-allow-headers': 'content-type'
 }
 
@@ -89,6 +90,15 @@ const NO_STORE = { 'cache-control': 'no-store' }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** 扫描成功后自动登记来源；失败只写 warning，不影响扫描结果。 */
+async function rememberScanSource(path: string): Promise<void> {
+  try {
+    await addSource(path)
+  } catch (error) {
+    console.warn('[scraper] 记录扫描来源失败:', errorMessage(error))
+  }
 }
 
 function methodNotAllowed() {
@@ -127,6 +137,7 @@ function scanStream(path: string, recursive: boolean, blacklist: readonly string
           },
           blacklist
         )
+        await rememberScanSource(path)
         send({ type: 'done', files })
       } catch (error) {
         send({ type: 'error', error: errorMessage(error) })
@@ -412,7 +423,9 @@ async function handleApi(req: Request, url: URL) {
     const blacklist = optionalStringArray(body.blacklist, 'blacklist')
     // stream=true 时以 NDJSON 逐步推送进度，前端可即时渲染。
     if (body.stream === true) return scanStream(path, recursive, blacklist)
-    return json(await scanFolder(path, recursive, blacklist))
+    const files = await scanFolder(path, recursive, blacklist)
+    await rememberScanSource(path)
+    return json(files)
   }
 
   if (route === 'probe') {
@@ -522,8 +535,42 @@ async function handleApi(req: Request, url: URL) {
     if (req.method === 'GET') return json(await loadSettings())
     if (req.method === 'PUT') {
       const body = ensureObject(await readJson(req), 'settings')
-      await saveSettings(body as unknown as Settings)
-      return json(body)
+      const next = { ...body } as unknown as Settings
+      // 前端整体保存设置时不带 sources；保留来源管理写入的记录，避免被覆盖。
+      if (next.sources === undefined) {
+        const current = await loadSettings()
+        next.sources = current.sources ?? []
+      }
+      await saveSettings(next)
+      return json(next)
+    }
+    return methodNotAllowed()
+  }
+
+  if (route === 'sources') {
+    if (req.method === 'GET') {
+      return json({ sources: await listSources() }, 200, NO_STORE)
+    }
+    if (req.method === 'POST') {
+      const body = ensureObject(await readJson(req), 'request')
+      const path = requireString(body.path, 'path')
+      const name = typeof body.name === 'string' ? body.name : undefined
+      try {
+        return json(await addSource(path, name))
+      } catch (error) {
+        throw new HttpError(400, errorMessage(error))
+      }
+    }
+    if (req.method === 'DELETE') {
+      const path = queryString(url, 'path')
+      if (!path) throw new HttpError(400, '缺少 path')
+      try {
+        const result = await removeSource(path)
+        if (!result.removed) return json({ error: '来源不存在' }, 404)
+        return json(result)
+      } catch (error) {
+        throw new HttpError(400, errorMessage(error))
+      }
     }
     return methodNotAllowed()
   }

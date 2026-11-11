@@ -18,10 +18,20 @@ export interface AIConfig {
   prompt: string
 }
 
+/** 媒体库来源（扫描根目录）；只记录路径，不移动/删除任何文件。 */
+export interface MediaSource {
+  path: string
+  name?: string
+  /** 毫秒时间戳。 */
+  addedAt: number
+}
+
 export interface Settings {
   ai: AIConfig
   modes?: Record<string, unknown>
   lastFolder?: string
+  /** 已登记的媒体库来源；旧设置没有该字段时按空数组处理。 */
+  sources?: MediaSource[]
   minDur?: number
   compact?: boolean
   /** 默认隐藏短片（疑似广告）。 */
@@ -82,6 +92,7 @@ export function defaultSettings(): Settings {
   return {
     ai: { ...DEFAULT_AI },
     lastFolder: '',
+    sources: [],
     minDur: 10,
     compact: false,
     hideShorts: true,
@@ -93,6 +104,26 @@ export function defaultSettings(): Settings {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** 兼容旧设置：缺失/损坏的 sources 一律回退为空数组，并去重。 */
+function normalizeSources(value: unknown, fallback: MediaSource[]): MediaSource[] {
+  if (!Array.isArray(value)) return fallback
+  const seen = new Set<string>()
+  const result: MediaSource[] = []
+  for (const entry of value) {
+    if (!isRecord(entry)) continue
+    const path = typeof entry.path === 'string' ? entry.path.trim() : ''
+    if (!path) continue
+    const key = process.platform === 'win32' ? path.toLowerCase() : path
+    if (seen.has(key)) continue
+    seen.add(key)
+    const name = typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : undefined
+    const addedAt =
+      typeof entry.addedAt === 'number' && Number.isFinite(entry.addedAt) ? entry.addedAt : 0
+    result.push({ path, ...(name ? { name } : {}), addedAt })
+  }
+  return result
 }
 
 /**
@@ -109,6 +140,7 @@ export async function loadSettings(): Promise<Settings> {
     return {
       ...defaults,
       ...parsed,
+      sources: normalizeSources(parsed.sources, defaults.sources ?? []),
       ai: {
         ...defaults.ai,
         ...(isRecord(parsed.ai) ? parsed.ai : {})
