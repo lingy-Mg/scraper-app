@@ -165,6 +165,80 @@ describe('取消', () => {
     expect(started).toEqual([0, 1])
   })
 
+  test('pause 后取消：不派发新任务，在途任务收到 abort', async () => {
+    let started = 0
+    let aborted = false
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const queue = new TaskQueue<number, number>(
+      [0, 1, 2],
+      async (_task, signal) => {
+        started += 1
+        await Promise.race([
+          gate,
+          new Promise<never>((_, reject) => {
+            signal.addEventListener(
+              'abort',
+              () => {
+                aborted = true
+                reject(abortError())
+              },
+              { once: true }
+            )
+          })
+        ])
+        return 0
+      },
+      { concurrency: 1 }
+    )
+
+    const completion = queue.start()
+    await waitFor(() => started === 1 && queue.progress().running === 1)
+    queue.pause()
+    queue.cancel()
+    release()
+    const final = await completion
+
+    expect(aborted).toBe(true)
+    expect(final.state).toBe('cancelled')
+    expect(final.running).toBe(0)
+    expect(final.done).toBe(0)
+    expect(started).toBe(1)
+  })
+
+  test('并发在途任务在 cancel 时全部收到 abort，最终进度只报告一次取消态', async () => {
+    const signals: AbortSignal[] = []
+    const progressLog: TaskQueueProgress[] = []
+    const queue = new TaskQueue<number, number>(
+      [0, 1, 2],
+      async (task, signal) => {
+        signals.push(signal)
+        return new Promise<number>((_, reject) => {
+          signal.addEventListener('abort', () => reject(abortError()), { once: true })
+        })
+      },
+      {
+        concurrency: 2,
+        onProgress: (progress) => progressLog.push(progress)
+      }
+    )
+
+    const completion = queue.start()
+    await waitFor(() => queue.progress().running === 2)
+    queue.cancel()
+    const final = await completion
+
+    expect(signals).toHaveLength(2)
+    expect(signals.every((signal) => signal.aborted)).toBe(true)
+    expect(final.state).toBe('cancelled')
+    expect(final.failed).toBe(0)
+    const last = progressLog[progressLog.length - 1]
+    expect(last.state).toBe('cancelled')
+    expect(last.running).toBe(0)
+  })
+
   test('start 前取消则不再执行任何任务，重复 cancel 幂等', async () => {
     let started = 0
     const queue = new TaskQueue<number, number>(
