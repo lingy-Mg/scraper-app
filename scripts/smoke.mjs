@@ -243,6 +243,174 @@ async function main() {
       assert(empty.items.length === 0, '清空后媒体库应为空', empty.items)
     })
 
+    await step('媒体库 query / duplicates / stats', async () => {
+      const libraryDir = join(workDir, 'library-media')
+      mkdirSync(libraryDir, { recursive: true })
+      const items = [
+        {
+          path: join(libraryDir, 'a.mp4'),
+          file: 'a.mp4',
+          mode: 'av',
+          code: 'DUP-001',
+          title: 'Alpha',
+          status: 'done',
+          dur: 600,
+          size: 1000,
+          maker: 'StudioA',
+          actors: 'Maria / John',
+          tags: ['高清', '中文字幕'],
+          updatedAt: 1000
+        },
+        {
+          path: join(libraryDir, 'b.mp4'),
+          file: 'b.mp4',
+          mode: 'av',
+          code: 'DUP-001',
+          title: 'Beta',
+          status: 'done',
+          dur: 600,
+          size: 1000,
+          maker: 'StudioA',
+          actors: 'Maria',
+          tags: ['高清'],
+          updatedAt: 2000
+        },
+        {
+          path: join(libraryDir, 'c.mp4'),
+          file: 'c.mp4',
+          mode: 'movie',
+          title: 'Gamma',
+          status: 'unmatched',
+          dur: 700,
+          size: 2000,
+          updatedAt: 3000
+        }
+      ]
+      const upsert = await request(baseUrl, '/api/library/upsert', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ items })
+      })
+      assert(upsert.count === 3, '增强测试应写入 3 行', upsert)
+
+      const all = await request(baseUrl, '/api/library/query?limit=5')
+      assert(all.total === 3 && all.items.length === 3, 'query 应返回 3 条', all)
+
+      const filtered = await request(
+        baseUrl,
+        `/api/library/query?q=alpha&mode=av&maker=studio&actor=maria&tag=${encodeURIComponent(
+          '高清'
+        )}&sort=title&order=asc&limit=1&offset=0`
+      )
+      assert(filtered.total === 1, '组合筛选应返回 1 条', filtered)
+      assert(filtered.items[0]?.title === 'Alpha', '组合筛选命中错误记录', filtered.items[0])
+
+      const page = await request(baseUrl, '/api/library/query?sort=title&order=asc&limit=1&offset=1')
+      assert(page.total === 3, '分页 total 应为 3', page)
+      assert(page.items.length === 1 && page.items[0].title === 'Beta', '分页 offset 无效', page.items)
+
+      const stats = await request(baseUrl, '/api/library/stats')
+      assert(stats.total === 3, 'stats.total 应为 3', stats)
+      assert(stats.totalSize === 4000, 'stats.totalSize 应为 4000', stats.totalSize)
+      assert(stats.byMode.av === 2 && stats.byMode.movie === 1, 'stats.byMode 不符', stats.byMode)
+      assert(
+        stats.topMakers[0]?.name === 'StudioA' && stats.topMakers[0]?.count === 2,
+        'stats.topMakers 不符',
+        stats.topMakers
+      )
+      assert(
+        stats.topActors[0]?.name === 'Maria' && stats.topActors[0]?.count === 2,
+        'stats.topActors 不符',
+        stats.topActors
+      )
+      assert(
+        stats.topTags.some((tag) => tag.name === '高清' && tag.count === 2),
+        'stats.topTags 不符',
+        stats.topTags
+      )
+
+      const dup = await request(baseUrl, '/api/library/duplicates?mode=av')
+      assert(dup.groups.length === 1, '应只有 1 个重复分组', dup.groups)
+      assert(dup.groups[0].reason === 'code', '应优先按番号分组', dup.groups[0])
+      assert(dup.groups[0].items.length === 2, '番号分组应有 2 条', dup.groups[0])
+
+      const movieStats = await request(baseUrl, '/api/library/stats?mode=movie')
+      assert(movieStats.total === 1 && movieStats.byMode.movie === 1, 'mode 过滤统计不符', movieStats)
+
+      for (const path of [
+        '/api/library/query?limit=abc',
+        '/api/library/query?limit=0',
+        '/api/library/query?offset=-1',
+        '/api/library/query?sort=bogus',
+        '/api/library/query?order=up'
+      ]) {
+        const response = await fetch(`${baseUrl}${path}`)
+        assert(response.status === 400, `${path} 应返回 400`, response.status)
+      }
+    })
+
+    await step('来源管理（增删/去重/不删文件）', async () => {
+      const samePath = (a, b) =>
+        a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+
+      const initial = await request(baseUrl, '/api/sources')
+      assert(
+        initial.sources.some((source) => samePath(source.path, mediaDir)),
+        '扫描成功后应自动登记来源',
+        initial.sources
+      )
+
+      const extraDir = join(workDir, 'extra-source')
+      mkdirSync(extraDir, { recursive: true })
+      const added = await request(baseUrl, '/api/sources', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: extraDir, name: '额外来源' })
+      })
+      assert(added.added === true, '添加来源应成功', added)
+      assert(added.source.name === '额外来源', '自定义名称未保存', added.source)
+      assert(added.sources.length === 2, '添加后应有 2 个来源', added.sources)
+
+      const duplicate = await request(baseUrl, '/api/sources', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: extraDir })
+      })
+      assert(duplicate.added === false, '重复添加应去重', duplicate)
+      assert(duplicate.sources.length === 2, '重复添加不应增加来源', duplicate.sources)
+
+      const badPath = await fetch(`${baseUrl}/api/sources`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: 'relative/path' })
+      })
+      assert(badPath.status === 400, '相对路径添加来源应返回 400', badPath.status)
+
+      const missingPath = await fetch(`${baseUrl}/api/sources`, { method: 'DELETE' })
+      assert(missingPath.status === 400, '缺少 path 的删除应返回 400', missingPath.status)
+
+      const removed = await request(
+        baseUrl,
+        `/api/sources?path=${encodeURIComponent(extraDir)}`,
+        { method: 'DELETE' }
+      )
+      assert(removed.removed === true, '删除来源应成功', removed)
+      assert(
+        !removed.sources.some((source) => samePath(source.path, extraDir)),
+        '删除后来源列表仍包含该项',
+        removed.sources
+      )
+      assert(existsSync(extraDir), '删除来源不应删除目录', extraDir)
+      assert(
+        removed.sources.some((source) => samePath(source.path, mediaDir)),
+        '删除来源不应影响其它来源',
+        removed.sources
+      )
+
+      const library = await request(baseUrl, '/api/library/query?limit=5')
+      assert(library.total === 3, '删除来源不应删除媒体库记录', library.total)
+    })
+
     await step('POST /api/organize（copy + NFO 落盘）', async () => {
       const nfo = '<movie><title>冒烟测试影片</title></movie>'
       const results = await request(baseUrl, '/api/organize', {
