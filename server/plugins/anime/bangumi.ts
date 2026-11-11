@@ -1,4 +1,4 @@
-import type { ProviderCandidate, ProviderDetail } from './types'
+import type { ProviderCandidate, ProviderDetail } from '../_shared/types'
 
 /**
  * Bangumi（动漫）元数据源。

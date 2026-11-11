@@ -23,7 +23,6 @@ import {
   type AIConfig,
   type Settings
 } from './settings'
-import { bangumiDetail, bangumiIdentify } from './providers/bangumi'
 import { aiIdentify, aiPick, aiTest, type Candidate } from './ai'
 import { cacheCover } from './covers'
 import {
@@ -652,28 +651,6 @@ async function handleApi(req: Request, url: URL) {
       const body = ensureObject(await readJson(req), 'request')
       const mode = typeof body.mode === 'string' && body.mode ? body.mode : undefined
       return json({ count: clearItems(mode) })
-    }
-
-    return json({ error: 'not found' }, 404)
-  }
-
-  if (route === 'bangumi') {
-    const action = parts[2]
-
-    if (action === 'identify') {
-      if (req.method !== 'POST') return methodNotAllowed()
-      const body = ensureObject(await readJson(req), 'request')
-      const filename = requireString(body.filename, 'filename')
-      const token = typeof body.token === 'string' && body.token ? body.token : undefined
-      return json({ candidates: await bangumiIdentify(filename, token) })
-    }
-
-    if (action === 'detail') {
-      if (req.method !== 'POST') return methodNotAllowed()
-      const body = ensureObject(await readJson(req), 'request')
-      const id = requireString(body.id, 'id')
-      const token = typeof body.token === 'string' && body.token ? body.token : undefined
-      return json(await bangumiDetail(id, token))
     }
 
     return json({ error: 'not found' }, 404)
