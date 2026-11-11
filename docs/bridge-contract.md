@@ -2,6 +2,7 @@
 
 > 本文件是前端与 Bun 后端共同遵守的接口约定。
 > 任何一侧改动接口，必须同步修改本文件。
+> 插件目录、`identify`/`resolve` 契约见 [plugin-contract.md](plugin-contract.md)。
 
 ## 1. 运行环境与通道
 
@@ -234,14 +235,15 @@ export interface AIPickResult {
 - 不得把 API Key 写入日志或返回给前端以外的位置。
 - 发送给模型的只有文件名与候选元数据。
 
-## 4.1 JavDB 元数据
+## 4.1 JavDB 元数据（javdb 插件）
 
-- 实现：`server/javdb.ts`；协议细节见 `docs/javdb-app-api.md`。
-- 有番号时只接受大小写/分隔符等价的**唯一精确匹配**，绝不回退搜索首项；无番号时按清洗后的名称返回前 N 条。
+- 实现：`server/plugins/javdb/javdb-api.ts`；协议细节见 `docs/javdb-app-api.md`。
+- 通过 `POST /api/plugins/javdb/identify` / `resolve` 调用，主程序不再提供 `/api/javdb/*` 路由。
+- 有番号时只接受大小写/分隔符等价的**唯一精确匹配**，绝不回退搜索首项；无番号时默认返回空（`allowTitle=true` 才按名称搜索）。
 - `duration` 在 App API 中是**分钟**，进入 `Candidate`/`Row` 前统一换算为秒（`<= 1000` 视为分钟）。
 - 串行 + 1.2s 间隔 + host 失败切换 + 5 分钟缓存。
 - `Candidate` 额外字段：`posterUrl`、`maker`、`actors`、`duration`、`detailId`。
-- 识别优先级：插件（Bun）→ JavDB → AI/正则。
+- 识别优先级：插件 `identify` → AI/正则。
 - 封面必须经 `/api/cover`（可选裁剪参数）解码后显示，禁止直接加载远程图片。
 
 ## 5. Bun HTTP 接口
@@ -262,13 +264,23 @@ export interface AIPickResult {
 | POST | `/api/ai/test` | `{ config }` | `AITestResult` |
 | POST | `/api/ai/identify` | `{ config, filename }` | `AIIdentifyResult` |
 | POST | `/api/ai/pick` | `{ config, filename, candidates }` | `AIPickResult` |
-| POST | `/api/javdb/identify` | `{ filename }` | `{ candidates: Candidate[] }` |
-| POST | `/api/javdb/detail` | `{ id }` | `object`（含 `magnets`） |
-| POST | `/api/javdb/search` | `{ keyword, limit? }` | `{ movies: object[] }` |
 | POST | `/api/open` | `{ path }` | `{ ok: true }` |
 | POST | `/api/reveal` | `{ path }` | `{ ok: true }` |
 
-保留原有插件接口：`/api/plugins`、`/api/plugins/reload`、`/api/plugins/:id/{config,reload,identify}`、`/plugins/:id/settings/`、`/ws`。
+插件接口（刮削源统一入口，详见 `docs/plugin-contract.md`）：
+
+| 方法 | 路径 | 入参 | 返回 |
+|---|---|---|---|
+| GET | `/api/plugins` | — | 插件清单（含 `capabilities`、`status`、`error`、`source`） |
+| POST | `/api/plugins/reload` | — | `{ ok, count }` |
+| POST | `/api/plugins/:id/reload` | — | 插件描述 |
+| GET/PUT | `/api/plugins/:id/config` | `Partial<PluginConfig>` | `PluginConfig` |
+| POST | `/api/plugins/:id/identify` | `{ filename, allowTitle?, options? }` | `{ candidates: Candidate[] }` |
+| POST | `/api/plugins/:id/resolve` | `{ candidateId, options? }` | 插件返回的详情对象 |
+| GET | `/plugins/:id/settings/` | — | 设置页静态资源 |
+
+内置插件 id：`javdb`、`av`、`movie`、`tv`、`anime`；用户插件可覆盖同名 id。
+旧的 `/api/javdb/*`、`/api/tmdb/*`、`/api/bangumi/*` 路由已删除。
 
 ### 5.1 扫描流（`POST /api/scan`，`stream: true`）
 
@@ -315,6 +327,11 @@ export interface FsListing {
 ## 6. 前端接入要求
 
 - `src/native.ts` 暴露 `native` 对象与 `native.mode: 'http'`（B/S 单端，始终为 `http`）。
+- 刮削调用统一走插件接口，`native` 方法签名保持不变：
+  - `javdbIdentify` / `javdbDetail` → `/api/plugins/javdb/{identify,resolve}`；
+  - `tmdbIdentify` / `tmdbDetail` → `/api/plugins/{movie|tv}/{identify,resolve}`；
+  - `bangumiIdentify` / `bangumiDetail` → `/api/plugins/anime/{identify,resolve}`。
+  - 密钥 / token / 语言通过 `options` 透传，插件也可自行读取 `modeConfig`。
 - 应用启动顺序：`app_info` → `load_settings` → `fetchPlugins`（失败则内置模式）→ 若 `lastFolder` 存在则自动扫描。
 - 「选择文件夹」必须调用 `native.pickFolder()`；未选中时不做任何事。
 - 扫描必须订阅进度并在 UI 立即反馈：

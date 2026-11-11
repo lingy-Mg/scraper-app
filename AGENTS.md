@@ -3,7 +3,7 @@
 本地影片元数据刮削与媒体库管理应用，**纯 B/S 单端**：Bun 一个进程同时提供 API、插件资源和前端静态文件，浏览器访问。
 **React 18 + Vite + TypeScript + Ant Design 5 + Bun**。
 
-> 本文件是给后续 AI/开发者的入口。详细交接见 [docs/AI_HANDOFF.md](docs/AI_HANDOFF.md)，待办见 [docs/ROADMAP.md](docs/ROADMAP.md)，接口契约见 [docs/bridge-contract.md](docs/bridge-contract.md) 与 [docs/providers-library-contract.md](docs/providers-library-contract.md)。
+> 本文件是给后续 AI/开发者的入口。详细交接见 [docs/AI_HANDOFF.md](docs/AI_HANDOFF.md)，待办见 [docs/ROADMAP.md](docs/ROADMAP.md)，接口契约见 [docs/bridge-contract.md](docs/bridge-contract.md)、[docs/plugin-contract.md](docs/plugin-contract.md) 与 [docs/providers-library-contract.md](docs/providers-library-contract.md)。
 
 ## 快速命令
 
@@ -85,7 +85,9 @@ AI 识别可走本机 `opencode` CLI（需在 PATH 中）。服务只监听 `127
 - JavDB 签名常量对应 App 1.9.28，升级后需更新 `server/javdb.ts`。
 - JavDB 动态域名解密不稳定，固定镜像 + host 失败切换。
 - OpenCode CLI 每次 `--standalone` 启动私有服务，单次约 3–10s；默认超时最少 90s。
-- 测试数据目录：`server/data/`（开发与生产共用，已 gitignore）。
+- 测试数据目录：`server/data/`（开发与生产共用，已 gitignore）；用户插件放 `server/data/plugins/<id>/`，同 id 覆盖内置。
+- 插件热重载必须经 `Bun.build` 打包后再 `import`；只给入口文件加 `?v=` 不会让入口依赖的模块失效。
+- 刮削站路由统一为 `/api/plugins/:id/{identify,resolve}`；不要再新增 `/api/javdb/*`、`/api/tmdb/*`、`/api/bangumi/*`，新增站点只加插件目录。
 - `esbuild` 清理系统临时目录偶发 `Access is denied`（Windows 环境权限问题）；构建时可把 `TEMP`/`TMP` 指向项目内临时目录绕过。
 
 ## 继续开发流程

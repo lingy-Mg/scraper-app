@@ -1,6 +1,7 @@
 # 媒体库与元数据源接口约定
 
 > 本文件用于并行开发：前端与 Bun 实现必须与下列签名、字段、行为一致。
+> 元数据源已插件化，目录与调用契约见 [plugin-contract.md](plugin-contract.md)。
 
 ## 1. 媒体库（SQLite）
 
@@ -83,7 +84,7 @@ CREATE TABLE IF NOT EXISTS items (
 
 ### 2.1 统一类型
 
-Bun：`server/providers/types.ts`
+Bun：`server/plugins/_shared/types.ts`
 
 ```ts
 export interface ProviderCandidate {
@@ -111,7 +112,7 @@ export interface ProviderDetail extends ProviderCandidate {
 
 ### 2.2 TMDB（电影 / 电视剧）
 
-Bun：`server/providers/tmdb.ts`
+Bun：`server/plugins/_shared/tmdb.ts`（`movie` / `tv` 插件通过 `_shared/tmdb-plugin.ts` 共用）
 
 ```ts
 export async function tmdbIdentify(
@@ -128,6 +129,19 @@ export async function tmdbDetail(
   lang?: string
 ): Promise<ProviderDetail>
 ```
+
+插件包装：
+
+```ts
+// movie/index.ts
+export default makeTmdbPlugin('movie')
+// tv/index.ts
+export default makeTmdbPlugin('tv')
+```
+
+- 插件从 `ctx.options.apiKey` → `ctx.modeConfig.tmdbApiKey` → `ctx.config.tmdbApiKey` 依次取 Key。
+- 语言从 `ctx.options.lang` → `ctx.modeConfig.tmdbLang` → `ctx.config.lang`（中文名映射 locale）读取。
+- `sources` 中显式关闭 `TMDB` 时 `identify` 抛错；`resolve` 不受开关影响。
 
 规则：
 
@@ -151,7 +165,7 @@ export async function tmdbDetail(
 
 ### 2.3 Bangumi（动漫）
 
-Bun：`server/providers/bangumi.ts`
+Bun：`server/plugins/anime/bangumi.ts`
 
 ```ts
 export async function bangumiIdentify(
@@ -164,6 +178,8 @@ export async function bangumiDetail(
   token?: string
 ): Promise<ProviderDetail>
 ```
+
+插件包装：`anime/index.ts` 从 `ctx.options.token` → `ctx.modeConfig.bangumiToken` → `ctx.config.bangumiToken` 取 token；`sources` 中显式关闭 `Bangumi` 时 `identify` 抛错。
 
 规则：
 
@@ -182,19 +198,22 @@ export async function bangumiDetail(
 
 ## 3. 集成方式（由集成方完成）
 
-- Bun：在 `server/index.ts` 注册：
+- Bun：媒体库仍在 `server/index.ts` 注册：
   - `POST /api/library/list` → `{ items: [] }`（GET 亦可）
   - `POST /api/library/upsert` `{ items }` → `{ count }`
   - `POST /api/library/remove` `{ paths }` → `{ count }`
   - `POST /api/library/clear` `{ mode? }` → `{ count }`
-  - `POST /api/tmdb/identify` `{ filename, mediaType, apiKey, lang? }` → `{ candidates }`
-  - `POST /api/tmdb/detail` `{ id, mediaType, apiKey, lang? }` → detail
-  - `POST /api/bangumi/identify` `{ filename, token? }` → `{ candidates }`
-  - `POST /api/bangumi/detail` `{ id, token? }` → detail
-- 前端：`native.ts` 增加对应方法。
+- Bun：元数据源通过通用插件接口注册（不再有 `/api/tmdb/*`、`/api/bangumi/*`）：
+  - `POST /api/plugins/{movie|tv}/identify` `{ filename, options: { apiKey, lang, mediaType } }` → `{ candidates }`
+  - `POST /api/plugins/{movie|tv}/resolve` `{ candidateId, options: { apiKey, lang, mediaType } }` → detail
+  - `POST /api/plugins/anime/identify` `{ filename, options: { token? } }` → `{ candidates }`
+  - `POST /api/plugins/anime/resolve` `{ candidateId, options: { token? } }` → detail
+- 前端：`native.ts` 保留原有 `tmdb*` / `bangumi*` 方法签名，内部改调插件接口。
 
 ## 4. 验收
 
-- Bun：`bun build server/library.ts --target=bun`、`bun build server/providers/tmdb.ts`、`bangumi.ts` 成功。
+- Bun：`bun build server/index.ts --target=bun` 成功；`GET /api/plugins` 能看到 5 个内置插件且 `status=ok`。
+- 插件：`server/plugins/_shared/tmdb.ts`、`server/plugins/anime/bangumi.ts` 能被 `Bun.build` 打包进各自插件产物。
 - Bangumi 可用真实请求测试（无需 Key）。
 - TMDB 无 Key 必须报「未配置 TMDB API Key」；可用 mock 服务测试解析。
+- 旧路由 `/api/tmdb/*`、`/api/bangumi/*`、`/api/javdb/*` 必须返回 404。

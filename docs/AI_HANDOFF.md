@@ -1,7 +1,7 @@
 # AI / 开发者交接文档
 
 > 更新时间：2026-11-11
-> 配套阅读：[AGENTS.md](../AGENTS.md) · [ROADMAP.md](ROADMAP.md) · [bridge-contract.md](bridge-contract.md) · [providers-library-contract.md](providers-library-contract.md) · [javdb-app-api.md](javdb-app-api.md)
+> 配套阅读：[AGENTS.md](../AGENTS.md) · [ROADMAP.md](ROADMAP.md) · [bridge-contract.md](bridge-contract.md) · [plugin-contract.md](plugin-contract.md) · [providers-library-contract.md](providers-library-contract.md) · [javdb-app-api.md](javdb-app-api.md)
 
 ## 1. 产品定位与功能矩阵
 
@@ -12,10 +12,11 @@
 | 目录扫描 / MP4 时长 / ffprobe 可选 | ✅ | `server/scan.ts` |
 | 文件整理（移动/复制/冲突/跨卷/空目录） | ✅ | `server/files.ts` |
 | 回收站批量删除 | ✅ | `server/files.ts` |
-| JavDB App API（番号/详情/演员/封面/磁力数据） | ✅ | `server/javdb.ts` |
-| TMDB 电影 / 电视剧 | ✅ 需 Key | `server/providers/tmdb.ts` |
-| Bangumi 动漫 | ✅ 可匿名 | `server/providers/bangumi.ts` |
-| AI（OpenAI 兼容 / OpenCode CLI） | ✅ | `server/ai.ts` |
+| JavDB App API（番号/详情/演员/封面/磁力数据） | ✅ | `server/plugins/javdb/javdb-api.ts` |
+| TMDB 电影 / 电视剧 | ✅ 需 Key | `server/plugins/_shared/tmdb.ts`（movie/tv 插件） |
+| Bangumi 动漫 | ✅ 可匿名 | `server/plugins/anime/bangumi.ts` |
+| 插件宿主（打包加载 / 热重载 / 用户目录） | ✅ | `server/registry.ts`、`server/plugins/` |
+| AI（OpenAI 兼容 / OpenCode CLI） | ✅ | `server/ai.ts`（经 ctx.ai 注入插件） |
 | SQLite 媒体库 | ✅ | `server/library.ts` |
 | 默认隐藏短片 / 清理弹窗列表 | ✅ | `src/App.tsx` |
 | 底部日志默认显示 / 拖动高度 | ✅ | `src/components/LogPanel.tsx`、`src/App.tsx` |
@@ -48,10 +49,16 @@ src/
     FolderPickerModal         # 网页内目录选择
 server/
   index.ts                    # Bun HTTP + /ws + 插件资源 + dist 静态托管
-  scan.ts / files.ts / settings.ts / ai.ts / library.ts / javdb.ts
-  providers/{tmdb,bangumi,types}.ts
-  plugins/{av,javdb,movie,tv,anime}/
+  registry.ts                 # 插件发现、打包加载、热重载、用户插件覆盖
+  scan.ts / files.ts / settings.ts / ai.ts / library.ts
+  plugins/
+    _shared/{types,plugin-utils,tmdb,tmdb-plugin}.ts
+    _shared/settings.html
+    av/  javdb/{plugin.json,index.ts,javdb-api.ts}
+    movie/  tv/  anime/{plugin.json,index.ts,bangumi.ts}
   data/                       # 运行时（gitignore）
+    plugins/                  # 用户插件（可选，同 id 覆盖内置）
+    .plugin-cache/            # Bun.build 产物
 scripts/
   dev.mjs                     # 开发：Bun watch + Vite
   start.mjs                   # 生产：单进程启动 + 打开浏览器
@@ -67,13 +74,15 @@ AGENTS.md
 - 文件系统：`/api/fs/roots`、`/api/fs/list`
 - 文件：`/api/organize`、`/api/trash`、`/api/open`、`/api/reveal`
 - 设置：`GET/PUT /api/settings`
-- AI：`/api/ai/test`、`/api/ai/identify`、`/api/ai/pick`
-- JavDB：`/api/javdb/identify`、`/api/javdb/detail`、`/api/javdb/search`
-- TMDB：`/api/tmdb/identify`、`/api/tmdb/detail`
-- Bangumi：`/api/bangumi/identify`、`/api/bangumi/detail`
+- AI：`/api/ai/test`、`/api/ai/identify`、`/api/ai/pick`（共享服务，同时经 `ctx.ai` 注入插件）
+- 刮削源（统一插件接口）：
+  - `GET /api/plugins`、`POST /api/plugins/reload`
+  - `POST /api/plugins/:id/{identify,resolve}`、`GET/PUT /api/plugins/:id/config`
+  - 内置 id：`javdb`、`av`、`movie`、`tv`、`anime`
+  - 旧路由 `/api/javdb/*`、`/api/tmdb/*`、`/api/bangumi/*` 已删除
 - 媒体库：`/api/library/{list,upsert,remove,clear}`
 - 封面：`/api/cover?url=...&x=&y=&width=&height=`
-- 插件：`/api/plugins*`、`/plugins/:id/settings/`、`/ws`
+- 插件资源 / WS：`/plugins/:id/settings/`、`/ws`
 
 目录选择不再弹系统对话框：前端弹窗通过 `/api/fs/*` 浏览真实路径。
 
@@ -94,6 +103,7 @@ interface Settings {
 ```
 
 `ModeConfig` 额外包含：`tmdbApiKey`、`tmdbLang`、`bangumiToken`（按模式保存）。
+插件调用时通过 `ctx.modeConfig` 读取这些值；语言与 `sources` 开关以插件自身 `ctx.config` 为准。
 
 存储位置（开发与生产共用）：
 

@@ -22,7 +22,7 @@
 
 ### P1 磁力面板
 
-- 数据已具备：`javdb_detail` 返回 `magnets[]`（`name/hash/size/cnsub/hd/files_count/pikpak_url`）
+- 数据已具备：`POST /api/plugins/javdb/resolve` 返回 `magnets[]`（`name/hash/size/cnsub/hd/files_count/pikpak_url`）
 - 计划：PosterModal 增加「磁力」区块，显示大小/字幕/高清标记与复制磁力链接
 - 验收：打开详情能加载磁力列表；复制按钮可用；失败有提示
 - 注意：只做元数据展示与复制，不内置下载器
@@ -35,8 +35,8 @@
 
 ### P3 插件宿主增强（B/S 单端）
 
-- 现状：Bun 进程直接加载 `server/plugins/*`，插件热重载可用
-- 计划：插件异常隔离、超时与失败重试；插件配置校验
+- 已完成：插件打包加载、目录内任意文件热重载、用户插件目录覆盖、单插件错误隔离
+- 计划：插件调用超时与失败重试；`plugin.json` / `defaults` 配置校验；插件依赖版本检查
 - 验收：单个插件崩溃不影响 API；错误在模式栏可见
 
 ### P4 媒体库增强
@@ -89,6 +89,18 @@
 - [x] Bun 单进程托管 `dist/` + API + 插件，新增 `npm run start`
 - [x] 契约文档、AGENTS、AI_HANDOFF 同步为 B/S 单端
 - 验证：`npx tsc --noEmit`、`bun build server/index.ts`、`npm run build`；20 个文件批量删除 0.69s，`removed=20`
+
+## 2026-11-11 刮削源插件化
+
+- [x] 通用插件接口：`POST /api/plugins/:id/{identify,resolve}`、`GET /api/plugins` 返回 `capabilities/status/error/source`
+- [x] `Bun.build` 打包加载：`server/data/.plugin-cache/<id>-<source>-<hash>.mjs`，改目录内任意 `.ts` 后 reload 生效
+- [x] JavDB 实现移入 `server/plugins/javdb/javdb-api.ts`，删除 `/api/javdb/*` 路由
+- [x] TMDB / Bangumi 移入 `_shared/tmdb.ts` 与 `anime/bangumi.ts`，删除 `/api/tmdb/*`、`/api/bangumi/*`
+- [x] AI 作为共享服务经 `ctx.ai` 注入插件，`/api/ai/*` 保留
+- [x] `src/native.ts` 刮削方法统一改走 `/api/plugins/:id/{identify,resolve}`（签名不变）
+- [x] 用户插件目录 `server/data/plugins/`，同 id 覆盖内置，缺失时静默跳过
+- [x] 新增 `docs/plugin-contract.md` 并同步接口文档
+- 验证：`npx tsc --noEmit`、`bun build server/index.ts`；`GET /api/plugins` 5 个插件；旧路由 404；修改非入口文件后 reload 生效
 
 ## 2026-11-11 文件名黑名单
 
