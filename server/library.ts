@@ -90,12 +90,46 @@ ON CONFLICT(path) DO UPDATE SET
   series = excluded.series,
   updated_at = excluded.updated_at;`
 
-const SELECT_SQL = `
-SELECT path, file, mode, code, title, status, year, maker, actors, overview, src,
+const SELECT_COLUMNS = `path, file, mode, code, title, status, year, maker, actors, overview, src,
        score, dur, size, poster_url, poster_crop_json, detail_id, tags_json,
-       release_date, director, series, updated_at
+       release_date, director, series, updated_at`
+
+const SELECT_SQL = `
+SELECT ${SELECT_COLUMNS}
 FROM items
 ORDER BY updated_at DESC, path ASC;`
+
+/** 允许的排序字段白名单；杜绝把用户输入拼进 SQL。 */
+const SORT_COLUMNS = {
+  updatedAt: 'updated_at',
+  title: 'title',
+  size: 'size',
+  dur: 'dur',
+  year: 'year'
+} as const
+
+export type LibrarySort = keyof typeof SORT_COLUMNS
+export type LibraryOrder = 'asc' | 'desc'
+
+/** 分页查询条件；空字符串会被忽略。 */
+export interface LibraryQueryOptions {
+  /** 模糊匹配 title / code / file / actors / maker / series。 */
+  q?: string
+  mode?: string
+  maker?: string
+  actor?: string
+  tag?: string
+  status?: string
+  sort?: LibrarySort | string
+  order?: LibraryOrder | string
+  limit?: number
+  offset?: number
+}
+
+export interface LibraryQueryResult {
+  total: number
+  items: LibraryItem[]
+}
 
 type ItemRow = {
   path: string
@@ -156,6 +190,15 @@ function getDb(): Database {
       // duplicate column
     }
   }
+
+  // 查询/筛选索引：幂等创建，旧库在首次访问时补齐。
+  conn.exec(`
+    CREATE INDEX IF NOT EXISTS idx_items_mode ON items(mode);
+    CREATE INDEX IF NOT EXISTS idx_items_code ON items(code);
+    CREATE INDEX IF NOT EXISTS idx_items_size ON items(size);
+    CREATE INDEX IF NOT EXISTS idx_items_dur ON items(dur);
+    CREATE INDEX IF NOT EXISTS idx_items_updated_at ON items(updated_at);
+  `)
 
   db = conn
   dbPath = target
@@ -255,6 +298,214 @@ export function closeLibrary(): void {
 export function listItems(): LibraryItem[] {
   const rows = getDb().query<ItemRow, []>(SELECT_SQL).all()
   return rows.map(rowToItem)
+}
+
+function cleanFilter(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/** LIKE 参数转义：用户输入的 % / _ / \ 按字面量匹配。 */
+function likePattern(value: string): string {
+  return `%${value.replace(/[\\%_]/g, '\\$&')}%`
+}
+
+function normalizeSort(value: unknown): LibrarySort {
+  const sort = cleanFilter(value)
+  return sort in SORT_COLUMNS ? (sort as LibrarySort) : 'updatedAt'
+}
+
+/**
+ * 分页查询媒体库。所有值都通过 SQL 参数绑定，排序字段只从白名单取。
+ * 空字符串条件忽略；limit 默认 50，超过 500 按 500 处理。
+ */
+export function queryLibrary(options: LibraryQueryOptions = {}): LibraryQueryResult {
+  const clauses: string[] = []
+  const params: (string | number)[] = []
+
+  const q = cleanFilter(options.q)
+  if (q) {
+    const pattern = likePattern(q)
+    clauses.push(`(
+      title LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\' OR file LIKE ? ESCAPE '\\'
+      OR actors LIKE ? ESCAPE '\\' OR maker LIKE ? ESCAPE '\\' OR series LIKE ? ESCAPE '\\'
+    )`)
+    for (let i = 0; i < 6; i += 1) params.push(pattern)
+  }
+
+  const mode = cleanFilter(options.mode)
+  if (mode) {
+    clauses.push('mode = ?')
+    params.push(mode)
+  }
+
+  const maker = cleanFilter(options.maker)
+  if (maker) {
+    clauses.push(`maker LIKE ? ESCAPE '\\'`)
+    params.push(likePattern(maker))
+  }
+
+  const actor = cleanFilter(options.actor)
+  if (actor) {
+    clauses.push(`actors LIKE ? ESCAPE '\\'`)
+    params.push(likePattern(actor))
+  }
+
+  const tag = cleanFilter(options.tag)
+  if (tag) {
+    // tags_json 是 JSON 字符串数组；匹配带引号的完整元素，避免子串误命中。
+    clauses.push(`tags_json LIKE ? ESCAPE '\\'`)
+    params.push(likePattern(`"${tag}"`))
+  }
+
+  const status = cleanFilter(options.status)
+  if (status) {
+    clauses.push('status = ?')
+    params.push(status)
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+  const sortColumn = SORT_COLUMNS[normalizeSort(options.sort)]
+  const order: LibraryOrder = cleanFilter(options.order) === 'asc' ? 'asc' : 'desc'
+
+  const rawLimit = Number(options.limit)
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(500, Math.trunc(rawLimit)) : 50
+  const rawOffset = Number(options.offset)
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.trunc(rawOffset) : 0
+
+  const database = getDb()
+  const totalRow = database
+    .prepare(`SELECT COUNT(*) AS total FROM items ${where};`)
+    .get(...params) as { total: number } | null
+  const rows = database
+    .prepare(
+      `SELECT ${SELECT_COLUMNS} FROM items ${where}
+       ORDER BY ${sortColumn} ${order.toUpperCase()}, path ASC
+       LIMIT ? OFFSET ?;`
+    )
+    .all(...params, limit, offset) as ItemRow[]
+
+  return { total: Number(totalRow?.total ?? 0), items: rows.map(rowToItem) }
+}
+
+export interface DuplicateGroup {
+  reason: 'code' | 'size-duration'
+  key: string
+  items: LibraryItem[]
+}
+
+/**
+ * 重复文件检测。
+ * - 同番号（code 非空且重复）优先；
+ * - 同 size 且同 dur（size > 0、dur > 0）；
+ * - 一条记录只会出现在一个分组里。
+ */
+export function findDuplicates(mode?: string): DuplicateGroup[] {
+  const targetMode = cleanFilter(mode)
+  const items = targetMode ? listItems().filter((item) => item.mode === targetMode) : listItems()
+  const groups: DuplicateGroup[] = []
+  const assigned = new Set<string>()
+
+  const codeGroups = new Map<string, LibraryItem[]>()
+  for (const item of items) {
+    const code = (item.code || '').trim().toUpperCase()
+    if (!code) continue
+    const list = codeGroups.get(code)
+    if (list) list.push(item)
+    else codeGroups.set(code, [item])
+  }
+
+  for (const key of [...codeGroups.keys()].sort()) {
+    const list = codeGroups.get(key)!
+    if (list.length < 2) continue
+    for (const item of list) assigned.add(item.path)
+    groups.push({ reason: 'code', key, items: list })
+  }
+
+  const sizeGroups = new Map<string, { size: number; dur: number; items: LibraryItem[] }>()
+  for (const item of items) {
+    if (assigned.has(item.path)) continue
+    const size = Number(item.size ?? 0)
+    const dur = Number(item.dur ?? 0)
+    if (!(size > 0) || !(dur > 0)) continue
+    const key = `${size}-${dur}`
+    const group = sizeGroups.get(key)
+    if (group) group.items.push(item)
+    else sizeGroups.set(key, { size, dur, items: [item] })
+  }
+
+  const sizeEntries = [...sizeGroups.values()]
+    .filter((group) => group.items.length >= 2)
+    .sort((a, b) => b.size - a.size || b.dur - a.dur)
+  for (const group of sizeEntries) {
+    groups.push({ reason: 'size-duration', key: `${group.size}-${group.dur}`, items: group.items })
+  }
+
+  return groups
+}
+
+export interface StatCount {
+  name: string
+  count: number
+}
+
+export interface LibraryStats {
+  total: number
+  totalSize: number
+  byMode: Record<string, number>
+  byStatus: Record<string, number>
+  topMakers: StatCount[]
+  topActors: StatCount[]
+  topTags: StatCount[]
+}
+
+function countValues(values: string[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const value of values) {
+    const name = value.trim()
+    if (!name) continue
+    counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  return counts
+}
+
+function topCounts(counts: Map<string, number>, limit = 10): StatCount[] {
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([name, count]) => ({ name, count }))
+}
+
+/** 媒体库统计；传入 mode 时只统计该模式。 */
+export function libraryStats(mode?: string): LibraryStats {
+  const targetMode = cleanFilter(mode)
+  const items = targetMode ? listItems().filter((item) => item.mode === targetMode) : listItems()
+
+  const byMode: Record<string, number> = {}
+  const byStatus: Record<string, number> = {}
+  const makers: string[] = []
+  const actors: string[] = []
+  const tags: string[] = []
+  let totalSize = 0
+
+  for (const item of items) {
+    byMode[item.mode] = (byMode[item.mode] ?? 0) + 1
+    byStatus[item.status] = (byStatus[item.status] ?? 0) + 1
+    if (item.maker) makers.push(item.maker)
+    if (item.actors) actors.push(...item.actors.split(/\s*\/\s*/))
+    for (const tag of item.tags ?? []) tags.push(tag)
+    const size = Number(item.size ?? 0)
+    if (size > 0) totalSize += size
+  }
+
+  return {
+    total: items.length,
+    totalSize,
+    byMode,
+    byStatus,
+    topMakers: topCounts(countValues(makers)),
+    topActors: topCounts(countValues(actors)),
+    topTags: topCounts(countValues(tags))
+  }
 }
 
 /** 批量插入或更新，返回受影响行数。整个批次在同一事务内完成。 */
