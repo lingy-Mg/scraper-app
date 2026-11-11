@@ -14,7 +14,6 @@ interface Props {
 }
 
 const NATIVE_LABEL: Record<NativeMode, string> = {
-  tauri: '桌面',
   http: 'HTTP',
   demo: '演示'
 }

@@ -16,16 +16,10 @@ export default function TitleBar({
   onClose
 }: Props) {
   return (
-    <div className="titlebar" data-tauri-drag-region onDoubleClick={onMaximize}>
-      <div className="appicon" data-tauri-drag-region>
-        刮
-      </div>
-      <span className="appname" data-tauri-drag-region>
-        刮削器
-      </span>
-      <span className="subtitle" data-tauri-drag-region>
-        {subtitle}
-      </span>
+    <div className="titlebar" onDoubleClick={onMaximize}>
+      <div className="appicon">刮</div>
+      <span className="appname">刮削器</span>
+      <span className="subtitle">{subtitle}</span>
       {showControls && (
         <div className="win-controls">
           <button className="wc" title="最小化" onClick={onMinimize}>

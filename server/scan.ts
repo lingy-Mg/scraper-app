@@ -50,7 +50,7 @@ function isFile(path: string): boolean {
 }
 
 /**
- * ffprobe 查找顺序：PATH → 可执行文件同目录 → src-tauri/binaries/。
+ * ffprobe 查找顺序：PATH → 可执行文件同目录 → 项目根目录 binaries/。
  * 结果缓存，避免每次扫描都重复探测。
  */
 export function findFfprobe(): string | null {
@@ -73,8 +73,8 @@ function locateFfprobe(): string | null {
   const names = process.platform === 'win32' ? ['ffprobe.exe', 'ffprobe'] : ['ffprobe']
   const bases = [
     dirname(process.execPath),
-    resolve(import.meta.dir, '..', 'src-tauri', 'binaries'),
-    resolve(process.cwd(), 'src-tauri', 'binaries')
+    resolve(import.meta.dir, '..', 'binaries'),
+    resolve(process.cwd(), 'binaries')
   ]
 
   for (const base of bases) {
@@ -341,7 +341,7 @@ function blacklistRegex(pattern: string): RegExp {
 }
 
 /**
- * 文件名黑名单匹配（与 `src/utils.ts`、Rust 侧保持一致）：
+ * 文件名黑名单匹配（与 `src/utils.ts` 保持一致）：
  * 不区分大小写；含 `*` / `?` 时通配符整名匹配，否则按包含匹配。
  */
 export function isBlacklisted(name: string, patterns: readonly string[]): boolean {

@@ -2,7 +2,7 @@ export type ModeKey = 'av' | 'movie' | 'tv' | 'anime'
 
 export type RowStatus = 'done' | 'unmatched' | 'running' | 'waiting' | 'error' | 'review'
 
-export type NativeMode = 'tauri' | 'http' | 'demo'
+export type NativeMode = 'http' | 'demo'
 
 export interface MediaFile {
   path: string
@@ -22,7 +22,7 @@ export interface ScanRequest {
   blacklist?: string[]
 }
 
-/** 扫描进度：Tauri `scan-progress` 事件与 HTTP NDJSON 流共用。 */
+/** 扫描进度：由 HTTP NDJSON 流推送。 */
 export interface ScanProgress {
   scanId: string
   /** `walk` = 枚举目录，`probe` = 读取视频信息。 */
@@ -239,7 +239,7 @@ export interface Row {
   posterUrl?: string
   /** 手动裁剪区域；为空表示完整封面。 */
   posterCrop?: CropRect
-  /** 本地缓存后的可显示地址（Tauri asset:// 或 HTTP 代理）。 */
+  /** 本地缓存后的可显示地址（HTTP 封面代理）。 */
   posterSrc?: string
   posterError?: boolean
   overview?: string

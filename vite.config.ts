@@ -7,9 +7,8 @@ export default defineConfig({
     port: 5173,
     host: '127.0.0.1',
     watch: {
-      // cargo/tauri 编译输出与运行时数据不参与前端热更新，避免 EBUSY 与无效重载。
+      // 运行时数据与构建产物不参与前端热更新，避免无效重载与文件占用。
       ignored: [
-        '**/src-tauri/**',
         '**/server/data/**',
         '**/dist/**',
         '**/.*.tmpdir/**',

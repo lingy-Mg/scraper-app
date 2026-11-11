@@ -292,7 +292,7 @@ async function handleApi(req: Request, url: URL) {
 
   if (route === 'pick-folder') {
     if (req.method !== 'POST') return methodNotAllowed()
-    return json({ error: '非 Tauri 环境无法弹出文件夹选择器' }, 400)
+    return json({ error: '网页环境无法弹出系统文件夹选择器' }, 400)
   }
 
   if (route === 'organize') {

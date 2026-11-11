@@ -17,18 +17,9 @@ import type {
 } from './types'
 import { INITIAL_AI } from './data'
 
-const isTauri =
-  typeof window !== 'undefined' &&
-  Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__)
-
-let mode: NativeMode = isTauri ? 'tauri' : 'demo'
+let mode: NativeMode = 'demo'
 let detectPromise: Promise<NativeMode> | null = null
 let detectedInfo: AppInfo | null = null
-
-const invokeTauri = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
-  const api = await import('@tauri-apps/api/core')
-  return api.invoke<T>(command, args)
-}
 
 interface HttpInit {
   method?: string
@@ -83,7 +74,6 @@ async function probeHttp(): Promise<NativeMode> {
 }
 
 async function ensureMode(): Promise<NativeMode> {
-  if (isTauri) return 'tauri'
   if (!detectPromise) {
     detectPromise = probeHttp().then((next) => {
       mode = next
@@ -101,7 +91,7 @@ const demoAppInfo = (): AppInfo => ({
 })
 
 const demoUnavailable = (action: string) =>
-  new Error(`演示模式不可用：${action}（未检测到桌面 / HTTP 后端）`)
+  new Error(`演示模式不可用：${action}（未检测到 HTTP 后端）`)
 
 export interface ScanOptions {
   /** 后端推送进度（枚举目录 / 读取视频信息）时回调。 */
@@ -257,7 +247,6 @@ export const native: NativeBridge = {
 
   async appInfo() {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<AppInfo>('app_info')
     if (current === 'http') {
       if (detectedInfo) return detectedInfo
       return http<AppInfo>('/api/info')
@@ -267,45 +256,18 @@ export const native: NativeBridge = {
 
   async scanFolder(path, recursive = true, options = {}) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      const scanId = `scan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-      let finished = false
-      const events = await import('@tauri-apps/api/event')
-      const unlisten = await events.listen<ScanProgress>('scan-progress', (event) => {
-        if (finished) return
-        const progress = event.payload
-        if (!progress || progress.scanId !== scanId) return
-        options.onProgress?.(progress)
-        if (progress.files?.length) options.onFiles?.(progress.files)
-      })
-      try {
-        const files = await invokeTauri<MediaFile[]>('scan_folder', {
-          path,
-          recursive,
-          scanId,
-          blacklist: options.blacklist ?? []
-        })
-        finished = true
-        return files
-      } finally {
-        finished = true
-        unlisten()
-      }
-    }
     if (current === 'http') return postScanStream(path, recursive, options)
     throw demoUnavailable('扫描目录')
   },
 
   async probeFile(path) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<MediaFile>('probe_file', { path })
     if (current === 'http') return http<MediaFile>('/api/probe', { body: { path } })
     throw demoUnavailable('读取视频信息')
   },
 
   async pickFolder() {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<string | null>('pick_folder')
     if (current === 'http') {
       const data = await http<{ path: string | null }>('/api/pick-folder', { method: 'POST' })
       return data.path ?? null
@@ -315,31 +277,24 @@ export const native: NativeBridge = {
 
   async organize(req) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<OrganizeResult[]>('organize_files', { ...req })
     if (current === 'http') return http<OrganizeResult[]>('/api/organize', { body: req })
     throw demoUnavailable('整理文件')
   },
 
   async trash(paths) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<TrashResult>('trash_files', { paths })
     if (current === 'http') return http<TrashResult>('/api/trash', { body: { paths } })
     throw demoUnavailable('删除文件')
   },
 
   async loadSettings() {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<Settings>('load_settings')
     if (current === 'http') return http<Settings>('/api/settings')
     return { ai: { ...INITIAL_AI } }
   },
 
   async saveSettings(settings) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      await invokeTauri<void>('save_settings', { settings })
-      return
-    }
     if (current === 'http') {
       await http<Settings>('/api/settings', { method: 'PUT', body: settings })
       return
@@ -349,14 +304,12 @@ export const native: NativeBridge = {
 
   async aiTest(config) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<AITestResult>('ai_test', { config })
     if (current === 'http') return http<AITestResult>('/api/ai/test', { body: { config } })
     return { ok: false, latencyMs: 0, message: '演示模式不可用，请启动后端后再测试' }
   },
 
   async aiIdentify(config, filename) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<AIIdentifyResult>('ai_identify', { config, filename })
     if (current === 'http') {
       return http<AIIdentifyResult>('/api/ai/identify', { body: { config, filename } })
     }
@@ -365,9 +318,6 @@ export const native: NativeBridge = {
 
   async aiPick(config, filename, candidates) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      return invokeTauri<AIPickResult>('ai_pick', { config, filename, candidates })
-    }
     if (current === 'http') {
       return http<AIPickResult>('/api/ai/pick', { body: { config, filename, candidates } })
     }
@@ -376,9 +326,6 @@ export const native: NativeBridge = {
 
   async javdbIdentify(filename, allowTitle = false) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      return invokeTauri<Candidate[]>('javdb_identify', { filename, allowTitle })
-    }
     if (current === 'http') {
       const data = await http<{ candidates: Candidate[] }>('/api/javdb/identify', {
         body: { filename, allowTitle }
@@ -390,9 +337,6 @@ export const native: NativeBridge = {
 
   async javdbDetail(id) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      return invokeTauri<Record<string, unknown>>('javdb_detail', { id })
-    }
     if (current === 'http') {
       return http<Record<string, unknown>>('/api/javdb/detail', { body: { id } })
     }
@@ -401,7 +345,6 @@ export const native: NativeBridge = {
 
   async libraryList() {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<LibraryItem[]>('library_list')
     if (current === 'http') {
       const data = await http<{ items: LibraryItem[] }>('/api/library/list')
       return data.items ?? []
@@ -411,7 +354,6 @@ export const native: NativeBridge = {
 
   async libraryUpsert(items) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<number>('library_upsert', { items })
     if (current === 'http') {
       const data = await http<{ count: number }>('/api/library/upsert', { body: { items } })
       return data.count ?? 0
@@ -421,7 +363,6 @@ export const native: NativeBridge = {
 
   async libraryRemove(paths) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<number>('library_remove', { paths })
     if (current === 'http') {
       const data = await http<{ count: number }>('/api/library/remove', { body: { paths } })
       return data.count ?? 0
@@ -431,7 +372,6 @@ export const native: NativeBridge = {
 
   async libraryClear(mode) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<number>('library_clear', { mode })
     if (current === 'http') {
       const data = await http<{ count: number }>('/api/library/clear', { body: { mode } })
       return data.count ?? 0
@@ -441,9 +381,6 @@ export const native: NativeBridge = {
 
   async tmdbIdentify(filename, mediaType, apiKey, lang) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      return invokeTauri<Candidate[]>('tmdb_identify', { filename, mediaType, apiKey, lang })
-    }
     if (current === 'http') {
       const data = await http<{ candidates: Candidate[] }>('/api/tmdb/identify', {
         body: { filename, mediaType, apiKey, lang }
@@ -455,14 +392,6 @@ export const native: NativeBridge = {
 
   async tmdbDetail(id, mediaType, apiKey, lang) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      return invokeTauri<Record<string, unknown>>('tmdb_detail', {
-        id,
-        mediaType,
-        apiKey,
-        lang
-      })
-    }
     if (current === 'http') {
       return http<Record<string, unknown>>('/api/tmdb/detail', {
         body: { id, mediaType, apiKey, lang }
@@ -473,7 +402,6 @@ export const native: NativeBridge = {
 
   async bangumiIdentify(filename, token) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<Candidate[]>('bangumi_identify', { filename })
     if (current === 'http') {
       const data = await http<{ candidates: Candidate[] }>('/api/bangumi/identify', {
         body: { filename, token }
@@ -485,7 +413,6 @@ export const native: NativeBridge = {
 
   async bangumiDetail(id, token) {
     const current = await ensureMode()
-    if (current === 'tauri') return invokeTauri<Record<string, unknown>>('bangumi_detail', { id })
     if (current === 'http') {
       return http<Record<string, unknown>>('/api/bangumi/detail', { body: { id, token } })
     }
@@ -494,24 +421,12 @@ export const native: NativeBridge = {
 
   async coverSrc(url) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      return invokeTauri<string>('cover_cache', { url })
-    }
     if (current === 'http') return `/api/cover?url=${encodeURIComponent(url)}&v=4`
     return url
   },
 
   async coverCrop(url, crop) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      return invokeTauri<string>('cover_crop', {
-        url,
-        x: crop.x,
-        y: crop.y,
-        width: crop.width,
-        height: crop.height
-      })
-    }
     if (current === 'http') {
       const query = new URLSearchParams({
         url,
@@ -528,10 +443,6 @@ export const native: NativeBridge = {
 
   async openPath(path) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      await invokeTauri<void>('open_path', { path })
-      return
-    }
     if (current === 'http') {
       await http<{ ok: true }>('/api/open', { body: { path } })
       return
@@ -541,10 +452,6 @@ export const native: NativeBridge = {
 
   async revealPath(path) {
     const current = await ensureMode()
-    if (current === 'tauri') {
-      await invokeTauri<void>('reveal_path', { path })
-      return
-    }
     if (current === 'http') {
       await http<{ ok: true }>('/api/reveal', { body: { path } })
       return
@@ -553,29 +460,14 @@ export const native: NativeBridge = {
   },
 
   async minimize() {
-    const current = await ensureMode()
-    if (current === 'tauri') {
-      await invokeTauri<void>('window_minimize')
-      return
-    }
-    // 浏览器中无法最小化，静默忽略。
+    // 浏览器中没有窗口最小化权限。
   },
 
   async toggleMaximize() {
-    const current = await ensureMode()
-    if (current === 'tauri') {
-      await invokeTauri<void>('window_toggle_maximize')
-      return
-    }
+    // 浏览器中没有窗口最大化权限。
   },
 
   async close() {
-    const current = await ensureMode()
-    if (current === 'tauri') {
-      await invokeTauri<void>('window_close')
-      return
-    }
-    if (current === 'demo') throw demoUnavailable('关闭窗口')
-    // HTTP 模式是普通浏览器标签页，不允许脚本关闭。
+    // 浏览器标签页不允许脚本关闭。
   }
 }

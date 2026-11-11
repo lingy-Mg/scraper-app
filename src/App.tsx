@@ -466,7 +466,7 @@ export default function ScraperApp() {
         } else {
           pushLog(
             'ok',
-            `已连接${native.mode === 'tauri' ? '桌面' : ' HTTP '}后端 v${info.version} · ${info.platform} · ffprobe ${info.ffprobe ? '可用' : '不可用'}`
+            `已连接 HTTP 后端 v${info.version} · ${info.platform} · ffprobe ${info.ffprobe ? '可用' : '不可用'}`
           )
         }
       } catch (error) {
@@ -1644,7 +1644,7 @@ export default function ScraperApp() {
       case 'about':
         message.info(
           `刮削器 ${appInfo?.version ?? '0.1.0'} · ${
-            nativeMode === 'tauri' ? '桌面' : nativeMode === 'http' ? 'HTTP' : '演示'
+            nativeMode === 'http' ? 'HTTP' : '演示'
           } 后端`
         )
         break
@@ -1694,7 +1694,7 @@ export default function ScraperApp() {
     <div className="app">
       <TitleBar
         subtitle={folder ? baseName(folder) : '未选择目录'}
-        showControls={nativeMode === 'tauri'}
+        showControls={false}
         onMinimize={handleMinimize}
         onMaximize={handleMaximize}
         onClose={handleClose}
@@ -1703,8 +1703,8 @@ export default function ScraperApp() {
         <div className="demo-banner">
           <WarningOutlined />
           <span>
-            演示模式：未检测到桌面或 HTTP 后端，原生功能不可用。请通过{' '}
-            <code>npm run dev</code> 或 Tauri 启动。
+            演示模式：未检测到 HTTP 后端，原生功能不可用。请先运行{' '}
+            <code>npm run dev</code> 或 <code>npm run start</code>。
           </span>
         </div>
       )}
