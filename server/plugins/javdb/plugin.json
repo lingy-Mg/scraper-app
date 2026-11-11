@@ -6,6 +6,7 @@
   "order": 12,
   "description": "JavDB App API：番号精确匹配、详情、演员、封面、磁力",
   "entry": "index.ts",
+  "capabilities": ["identify", "resolve"],
   "labels": { "code": "番号", "title": "标题" },
   "defaults": {
     "lang": "日语",

@@ -6,6 +6,7 @@
   "order": 20,
   "description": "TMDB / 豆瓣 / IMDb 电影元数据",
   "entry": "index.ts",
+  "capabilities": ["identify", "resolve"],
   "labels": { "code": "文件名", "title": "片名" },
   "defaults": {
     "lang": "中文",

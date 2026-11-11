@@ -6,6 +6,7 @@
   "order": 40,
   "description": "Bangumi / AniDB 番剧元数据，按季与集组织",
   "entry": "index.ts",
+  "capabilities": ["identify", "resolve"],
   "labels": { "code": "文件", "title": "番剧" },
   "defaults": {
     "lang": "中文",

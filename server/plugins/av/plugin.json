@@ -6,6 +6,7 @@
   "order": 10,
   "description": "JavDB / Minnano / FANZA 元数据，支持番号推断与多结果候选",
   "entry": "index.ts",
+  "capabilities": ["identify", "resolve"],
   "labels": { "code": "番号", "title": "标题" },
   "defaults": {
     "lang": "日语",

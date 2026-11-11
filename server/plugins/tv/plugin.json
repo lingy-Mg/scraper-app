@@ -6,6 +6,7 @@
   "order": 30,
   "description": "TMDB / TVDB 剧集元数据，按季与集组织",
   "entry": "index.ts",
+  "capabilities": ["identify", "resolve"],
   "labels": { "code": "文件", "title": "剧集" },
   "defaults": {
     "lang": "中文",

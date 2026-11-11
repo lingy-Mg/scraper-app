@@ -28,14 +28,19 @@ export interface PluginManifest {
   order?: number
   description?: string
   entry?: string
+  /** 插件声明的通用能力，缺省为 identify + resolve。 */
+  capabilities?: string[]
   labels: { code: string; title: string }
   defaults: PluginConfig
 }
+
+export const DEFAULT_CAPABILITIES = ['identify', 'resolve'] as const
 
 export interface LoadedPlugin {
   manifest: PluginManifest
   config: PluginConfig
   impl: any
+  capabilities: string[]
   status: 'ok' | 'error'
   error?: string
   loadedAt: number
@@ -75,6 +80,12 @@ async function persistOverrides() {
   await writeFile(CONFIG_FILE, JSON.stringify(out, null, 2), 'utf8')
 }
 
+function capabilitiesOf(manifest: PluginManifest): string[] {
+  const declared = Array.isArray(manifest.capabilities) ? manifest.capabilities : []
+  const list = declared.length ? declared : [...DEFAULT_CAPABILITIES]
+  return [...new Set(list.filter((item) => typeof item === 'string' && item.trim()))]
+}
+
 async function loadOne(id: string): Promise<LoadedPlugin> {
   const dir = join(PLUGIN_ROOT, id)
   try {
@@ -95,6 +106,7 @@ async function loadOne(id: string): Promise<LoadedPlugin> {
       manifest,
       config,
       impl,
+      capabilities: capabilitiesOf(manifest),
       status: 'ok',
       loadedAt: Date.now()
     }
@@ -112,6 +124,7 @@ async function loadOne(id: string): Promise<LoadedPlugin> {
       },
       config: { ...fallbackDefaults, ...(overrides.get(id) ?? {}) },
       impl: null,
+      capabilities: [...DEFAULT_CAPABILITIES],
       status: 'error',
       error: String(error),
       loadedAt: Date.now()

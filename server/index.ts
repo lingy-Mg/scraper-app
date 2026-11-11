@@ -208,6 +208,7 @@ function serialize(id: string, origin: string) {
     description: m.description ?? '',
     status: plugin.status,
     error: plugin.error ?? '',
+    capabilities: plugin.capabilities,
     codeLabel: m.labels.code,
     titleLabel: m.labels.title,
     settingsUrl: `${origin}/plugins/${m.id}/settings/`,
@@ -215,11 +216,36 @@ function serialize(id: string, origin: string) {
   }
 }
 
-async function identifyPlugin(id: string, filename: string, allowTitle = false) {
+function pluginOptions(value: unknown): Record<string, unknown> {
+  if (value === undefined || value === null) return {}
+  return ensureObject(value, 'options')
+}
+
+function requirePlugin(id: string) {
   const plugin = getPlugin(id)
   if (!plugin || plugin.status !== 'ok') throw new Error('插件不可用')
+  return plugin
+}
+
+async function identifyPlugin(
+  id: string,
+  filename: string,
+  allowTitle = false,
+  options: Record<string, unknown> = {}
+) {
+  const plugin = requirePlugin(id)
   if (typeof plugin.impl?.identify !== 'function') throw new Error('插件未实现 identify')
-  return plugin.impl.identify({ filename, allowTitle, config: plugin.config })
+  return plugin.impl.identify({ filename, allowTitle, config: plugin.config, options })
+}
+
+async function resolvePlugin(
+  id: string,
+  candidateId: string,
+  options: Record<string, unknown> = {}
+) {
+  const plugin = requirePlugin(id)
+  if (typeof plugin.impl?.resolve !== 'function') throw new Error('插件未实现 resolve')
+  return plugin.impl.resolve({ config: plugin.config, options }, candidateId)
 }
 
 async function handlePlugins(req: Request, url: URL, parts: string[]) {
@@ -260,7 +286,18 @@ async function handlePlugins(req: Request, url: URL, parts: string[]) {
     const filename = requireString(body.filename, 'filename')
     const allowTitle = body.allowTitle === true
     try {
-      return json({ candidates: await identifyPlugin(id, filename, allowTitle) })
+      const candidates = await identifyPlugin(id, filename, allowTitle, pluginOptions(body.options))
+      return json({ candidates })
+    } catch (error) {
+      return json({ error: errorMessage(error) }, 400)
+    }
+  }
+
+  if (action === 'resolve' && req.method === 'POST') {
+    const body = ensureObject(await readJson(req), 'request')
+    const candidateId = requireString(body.candidateId, 'candidateId')
+    try {
+      return json(await resolvePlugin(id, candidateId, pluginOptions(body.options)))
     } catch (error) {
       return json({ error: errorMessage(error) }, 400)
     }
