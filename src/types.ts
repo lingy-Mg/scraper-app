@@ -2,7 +2,7 @@ export type ModeKey = 'av' | 'movie' | 'tv' | 'anime'
 
 export type RowStatus = 'done' | 'unmatched' | 'running' | 'waiting' | 'error' | 'review'
 
-export type NativeMode = 'http' | 'demo'
+export type NativeMode = 'http'
 
 export interface MediaFile {
   path: string

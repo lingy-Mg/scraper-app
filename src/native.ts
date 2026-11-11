@@ -15,11 +15,6 @@ import type {
   Settings,
   TrashResult
 } from './types'
-import { INITIAL_AI } from './data'
-
-let mode: NativeMode = 'demo'
-let detectPromise: Promise<NativeMode> | null = null
-let detectedInfo: AppInfo | null = null
 
 interface HttpInit {
   method?: string
@@ -53,46 +48,6 @@ async function http<T>(path: string, init?: HttpInit): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T
 }
 
-async function probeHttp(): Promise<NativeMode> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 800)
-  try {
-    const response = await fetch('/api/info', {
-      signal: controller.signal,
-      headers: { accept: 'application/json' }
-    })
-    if (!response.ok) return 'demo'
-    const info = (await response.json()) as AppInfo
-    if (!info || typeof info !== 'object') return 'demo'
-    detectedInfo = info
-    return 'http'
-  } catch {
-    return 'demo'
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-async function ensureMode(): Promise<NativeMode> {
-  if (!detectPromise) {
-    detectPromise = probeHttp().then((next) => {
-      mode = next
-      return next
-    })
-  }
-  return detectPromise
-}
-
-const demoAppInfo = (): AppInfo => ({
-  version: '0.1.0',
-  platform: typeof navigator === 'undefined' ? 'web' : navigator.platform || 'web',
-  ffprobe: false,
-  native: false
-})
-
-const demoUnavailable = (action: string) =>
-  new Error(`演示模式不可用：${action}（未检测到 HTTP 后端）`)
-
 export interface ScanOptions {
   /** 后端推送进度（枚举目录 / 读取视频信息）时回调。 */
   onProgress?: (progress: ScanProgress) => void
@@ -108,7 +63,7 @@ type ScanStreamEvent =
   | { type: 'error'; error: string }
 
 /**
- * HTTP 模式：以 NDJSON 流读取扫描进度。
+ * 以 NDJSON 流读取扫描进度。
  * 后端不支持流式（返回 JSON 数组）时自动退化。
  */
 async function postScanStream(
@@ -240,223 +195,137 @@ export interface NativeBridge {
   close(): Promise<void>
 }
 
+/**
+ * B/S 版本只有一个后端：同源 Bun HTTP 接口。
+ * 所有业务组件通过 `native` 调用，不直接 fetch。
+ */
 export const native: NativeBridge = {
-  get mode() {
-    return mode
+  get mode(): NativeMode {
+    return 'http'
   },
 
-  async appInfo() {
-    const current = await ensureMode()
-    if (current === 'http') {
-      if (detectedInfo) return detectedInfo
-      return http<AppInfo>('/api/info')
-    }
-    return demoAppInfo()
+  appInfo() {
+    return http<AppInfo>('/api/info')
   },
 
-  async scanFolder(path, recursive = true, options = {}) {
-    const current = await ensureMode()
-    if (current === 'http') return postScanStream(path, recursive, options)
-    throw demoUnavailable('扫描目录')
+  scanFolder(path, recursive = true, options = {}) {
+    return postScanStream(path, recursive, options)
   },
 
-  async probeFile(path) {
-    const current = await ensureMode()
-    if (current === 'http') return http<MediaFile>('/api/probe', { body: { path } })
-    throw demoUnavailable('读取视频信息')
+  probeFile(path) {
+    return http<MediaFile>('/api/probe', { body: { path } })
   },
 
   async pickFolder() {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const data = await http<{ path: string | null }>('/api/pick-folder', { method: 'POST' })
-      return data.path ?? null
-    }
-    throw demoUnavailable('选择文件夹')
+    const data = await http<{ path: string | null }>('/api/pick-folder', { method: 'POST' })
+    return data.path ?? null
   },
 
-  async organize(req) {
-    const current = await ensureMode()
-    if (current === 'http') return http<OrganizeResult[]>('/api/organize', { body: req })
-    throw demoUnavailable('整理文件')
+  organize(req) {
+    return http<OrganizeResult[]>('/api/organize', { body: req })
   },
 
-  async trash(paths) {
-    const current = await ensureMode()
-    if (current === 'http') return http<TrashResult>('/api/trash', { body: { paths } })
-    throw demoUnavailable('删除文件')
+  trash(paths) {
+    return http<TrashResult>('/api/trash', { body: { paths } })
   },
 
-  async loadSettings() {
-    const current = await ensureMode()
-    if (current === 'http') return http<Settings>('/api/settings')
-    return { ai: { ...INITIAL_AI } }
+  loadSettings() {
+    return http<Settings>('/api/settings')
   },
 
   async saveSettings(settings) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      await http<Settings>('/api/settings', { method: 'PUT', body: settings })
-      return
-    }
-    throw demoUnavailable('保存设置')
+    await http<Settings>('/api/settings', { method: 'PUT', body: settings })
   },
 
-  async aiTest(config) {
-    const current = await ensureMode()
-    if (current === 'http') return http<AITestResult>('/api/ai/test', { body: { config } })
-    return { ok: false, latencyMs: 0, message: '演示模式不可用，请启动后端后再测试' }
+  aiTest(config) {
+    return http<AITestResult>('/api/ai/test', { body: { config } })
   },
 
-  async aiIdentify(config, filename) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      return http<AIIdentifyResult>('/api/ai/identify', { body: { config, filename } })
-    }
-    throw demoUnavailable('AI 识别')
+  aiIdentify(config, filename) {
+    return http<AIIdentifyResult>('/api/ai/identify', { body: { config, filename } })
   },
 
-  async aiPick(config, filename, candidates) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      return http<AIPickResult>('/api/ai/pick', { body: { config, filename, candidates } })
-    }
-    throw demoUnavailable('AI 选择')
+  aiPick(config, filename, candidates) {
+    return http<AIPickResult>('/api/ai/pick', { body: { config, filename, candidates } })
   },
 
   async javdbIdentify(filename, allowTitle = false) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const data = await http<{ candidates: Candidate[] }>('/api/javdb/identify', {
-        body: { filename, allowTitle }
-      })
-      return data.candidates ?? []
-    }
-    throw demoUnavailable('JavDB 识别')
+    const data = await http<{ candidates: Candidate[] }>('/api/javdb/identify', {
+      body: { filename, allowTitle }
+    })
+    return data.candidates ?? []
   },
 
-  async javdbDetail(id) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      return http<Record<string, unknown>>('/api/javdb/detail', { body: { id } })
-    }
-    throw demoUnavailable('JavDB 详情')
+  javdbDetail(id) {
+    return http<Record<string, unknown>>('/api/javdb/detail', { body: { id } })
   },
 
   async libraryList() {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const data = await http<{ items: LibraryItem[] }>('/api/library/list')
-      return data.items ?? []
-    }
-    return []
+    const data = await http<{ items: LibraryItem[] }>('/api/library/list')
+    return data.items ?? []
   },
 
   async libraryUpsert(items) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const data = await http<{ count: number }>('/api/library/upsert', { body: { items } })
-      return data.count ?? 0
-    }
-    return 0
+    const data = await http<{ count: number }>('/api/library/upsert', { body: { items } })
+    return data.count ?? 0
   },
 
   async libraryRemove(paths) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const data = await http<{ count: number }>('/api/library/remove', { body: { paths } })
-      return data.count ?? 0
-    }
-    return 0
+    const data = await http<{ count: number }>('/api/library/remove', { body: { paths } })
+    return data.count ?? 0
   },
 
   async libraryClear(mode) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const data = await http<{ count: number }>('/api/library/clear', { body: { mode } })
-      return data.count ?? 0
-    }
-    return 0
+    const data = await http<{ count: number }>('/api/library/clear', { body: { mode } })
+    return data.count ?? 0
   },
 
   async tmdbIdentify(filename, mediaType, apiKey, lang) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const data = await http<{ candidates: Candidate[] }>('/api/tmdb/identify', {
-        body: { filename, mediaType, apiKey, lang }
-      })
-      return data.candidates ?? []
-    }
-    throw demoUnavailable('TMDB 识别')
+    const data = await http<{ candidates: Candidate[] }>('/api/tmdb/identify', {
+      body: { filename, mediaType, apiKey, lang }
+    })
+    return data.candidates ?? []
   },
 
-  async tmdbDetail(id, mediaType, apiKey, lang) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      return http<Record<string, unknown>>('/api/tmdb/detail', {
-        body: { id, mediaType, apiKey, lang }
-      })
-    }
-    throw demoUnavailable('TMDB 详情')
+  tmdbDetail(id, mediaType, apiKey, lang) {
+    return http<Record<string, unknown>>('/api/tmdb/detail', {
+      body: { id, mediaType, apiKey, lang }
+    })
   },
 
   async bangumiIdentify(filename, token) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const data = await http<{ candidates: Candidate[] }>('/api/bangumi/identify', {
-        body: { filename, token }
-      })
-      return data.candidates ?? []
-    }
-    throw demoUnavailable('Bangumi 识别')
+    const data = await http<{ candidates: Candidate[] }>('/api/bangumi/identify', {
+      body: { filename, token }
+    })
+    return data.candidates ?? []
   },
 
-  async bangumiDetail(id, token) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      return http<Record<string, unknown>>('/api/bangumi/detail', { body: { id, token } })
-    }
-    throw demoUnavailable('Bangumi 详情')
+  bangumiDetail(id, token) {
+    return http<Record<string, unknown>>('/api/bangumi/detail', { body: { id, token } })
   },
 
   async coverSrc(url) {
-    const current = await ensureMode()
-    if (current === 'http') return `/api/cover?url=${encodeURIComponent(url)}&v=4`
-    return url
+    return `/api/cover?url=${encodeURIComponent(url)}&v=4`
   },
 
   async coverCrop(url, crop) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      const query = new URLSearchParams({
-        url,
-        x: String(crop.x),
-        y: String(crop.y),
-        width: String(crop.width),
-        height: String(crop.height),
-        v: '4'
-      })
-      return `/api/cover?${query.toString()}`
-    }
-    return url
+    const query = new URLSearchParams({
+      url,
+      x: String(crop.x),
+      y: String(crop.y),
+      width: String(crop.width),
+      height: String(crop.height),
+      v: '4'
+    })
+    return `/api/cover?${query.toString()}`
   },
 
   async openPath(path) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      await http<{ ok: true }>('/api/open', { body: { path } })
-      return
-    }
-    throw demoUnavailable('打开文件')
+    await http<{ ok: true }>('/api/open', { body: { path } })
   },
 
   async revealPath(path) {
-    const current = await ensureMode()
-    if (current === 'http') {
-      await http<{ ok: true }>('/api/reveal', { body: { path } })
-      return
-    }
-    throw demoUnavailable('在文件夹中显示')
+    await http<{ ok: true }>('/api/reveal', { body: { path } })
   },
 
   async minimize() {

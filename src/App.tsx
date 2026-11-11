@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { App as AntdApp, Checkbox, Input, Menu, Modal } from 'antd'
 import type { Key } from 'react'
-import { WarningOutlined } from '@ant-design/icons'
 import TitleBar from './components/TitleBar'
 import MenuBar from './components/MenuBar'
 import Toolbar from './components/Toolbar'
@@ -168,7 +167,6 @@ export default function ScraperApp() {
   const [folder, setFolder] = useState('')
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [nativeMode, setNativeMode] = useState<NativeMode>(native.mode)
-  const [nativeReady, setNativeReady] = useState(false)
   const [task, setTask] = useState('空闲')
   const [hydrated, setHydrated] = useState(false)
   const [scan, setScan] = useState<ScanState>({
@@ -230,7 +228,7 @@ export default function ScraperApp() {
   /** 电影/电视剧走 TMDB，动漫走 Bangumi。 */
   const identifyWithProvider = async (filename: string): Promise<Candidate[]> => {
     const kind = providerKind()
-    if (!kind || nativeMode === 'demo') return []
+    if (!kind) return []
 
     if (kind === 'anime') {
       const list = await native.bangumiIdentify(filename, mode.bangumiToken)
@@ -460,18 +458,12 @@ export default function ScraperApp() {
         const info = await native.appInfo()
         setAppInfo(info)
         setNativeMode(native.mode)
-        setNativeReady(true)
-        if (native.mode === 'demo') {
-          pushLog('warn', '演示模式：未检测到本机后端，原生功能不可用')
-        } else {
-          pushLog(
-            'ok',
-            `已连接 HTTP 后端 v${info.version} · ${info.platform} · ffprobe ${info.ffprobe ? '可用' : '不可用'}`
-          )
-        }
+        pushLog(
+          'ok',
+          `已连接 HTTP 后端 v${info.version} · ${info.platform} · ffprobe ${info.ffprobe ? '可用' : '不可用'}`
+        )
       } catch (error) {
         setNativeMode(native.mode)
-        setNativeReady(true)
         pushLog('warn', `后端信息获取失败：${errText(error)}`)
       }
 
@@ -599,7 +591,7 @@ export default function ScraperApp() {
 
   // 配置持久化（500ms 防抖）；演示模式不写设置文件。
   useEffect(() => {
-    if (!hydrated || nativeMode === 'demo' || !canSaveRef.current) return
+    if (!hydrated || !canSaveRef.current) return
     if (skipSaveRef.current) {
       skipSaveRef.current = false
       return
@@ -625,7 +617,7 @@ export default function ScraperApp() {
 
   // 媒体库持久化（800ms 防抖）；扫描与重置期间不落库。
   useEffect(() => {
-    if (!hydrated || nativeMode === 'demo' || libraryPausedRef.current || scan.active) return
+    if (!hydrated || libraryPausedRef.current || scan.active) return
     const timer = window.setTimeout(() => {
       const items = rows
         .filter((row) => row.path && row.status !== 'running' && row.status !== 'waiting')
@@ -656,7 +648,7 @@ export default function ScraperApp() {
 
   // 封面通过后端缓存后再显示，避免 WebView 直连图片站失败。
   useEffect(() => {
-    if (!hydrated || nativeMode === 'demo') return
+    if (!hydrated) return
     const pending = rows
       .filter((row) => row.posterUrl && !row.posterSrc && !row.posterError)
       .slice(0, 10)
@@ -786,7 +778,7 @@ export default function ScraperApp() {
       }
     }
 
-    if (!fromPlugin && !kind && nativeMode !== 'demo') {
+    if (!fromPlugin && !kind) {
       try {
         const found = await native.javdbIdentify(row.file)
         candidates = found.map((raw, index) => normalizeCandidate(raw, index))
@@ -932,7 +924,7 @@ export default function ScraperApp() {
         }
       }
 
-      if (!kind && nativeMode !== 'demo') {
+      if (!kind) {
         try {
           const found = await native.javdbIdentify(row.file)
           if (found.length) {
@@ -1292,10 +1284,6 @@ export default function ScraperApp() {
   }
 
   const pickFolder = async () => {
-    if (nativeMode === 'demo') {
-      message.warning('演示模式无法选择本地文件夹，请启动后端或桌面应用')
-      return
-    }
     if (task !== '空闲') {
       message.info('当前有任务进行中')
       return
@@ -1429,7 +1417,7 @@ export default function ScraperApp() {
           pushLog('warn', `插件识别失败，回退 AI：${errText(error)}`)
         }
       }
-      if (!fromPlugin && !kind && nativeMode !== 'demo') {
+      if (!fromPlugin && !kind) {
         try {
           const found = await native.javdbIdentify(keyword, true)
           candidates = found.map((raw, index) => normalizeCandidate(raw, index))
@@ -1643,9 +1631,7 @@ export default function ScraperApp() {
         break
       case 'about':
         message.info(
-          `刮削器 ${appInfo?.version ?? '0.1.0'} · ${
-            nativeMode === 'http' ? 'HTTP' : '演示'
-          } 后端`
+          `刮削器 ${appInfo?.version ?? '0.1.0'} · HTTP 后端`
         )
         break
       default:
@@ -1699,15 +1685,6 @@ export default function ScraperApp() {
         onMaximize={handleMaximize}
         onClose={handleClose}
       />
-      {nativeReady && nativeMode === 'demo' && (
-        <div className="demo-banner">
-          <WarningOutlined />
-          <span>
-            演示模式：未检测到 HTTP 后端，原生功能不可用。请先运行{' '}
-            <code>npm run dev</code> 或 <code>npm run start</code>。
-          </span>
-        </div>
-      )}
       <MenuBar onAction={handleMenu} />
       <Toolbar
         path={folder}

@@ -14,8 +14,7 @@ interface Props {
 }
 
 const NATIVE_LABEL: Record<NativeMode, string> = {
-  http: 'HTTP',
-  demo: '演示'
+  http: 'HTTP'
 }
 
 export default function StatusBar({

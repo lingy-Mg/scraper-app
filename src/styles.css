@@ -99,25 +99,6 @@ button {
   color: #fff;
 }
 
-/* demo banner */
-.demo-banner {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  background: #fff8e6;
-  border-bottom: 1px solid #f0dcc0;
-  color: var(--amber);
-  font-size: 11px;
-}
-.demo-banner code {
-  font-family: var(--mono);
-  padding: 0 4px;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.04);
-}
-
 /* menu bar */
 .menubar {
   height: 28px;
