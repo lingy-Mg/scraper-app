@@ -73,6 +73,39 @@ export async function identifyWithPlugin(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ filename, allowTitle })
   })
-  if (!response.ok) throw new Error('插件识别失败')
+  if (!response.ok) {
+    // 保留后端的可操作错误信息（如 JavDB 需要登录），不要吞成通用文案。
+    let message = '插件识别失败'
+    try {
+      const data = (await response.json()) as { error?: string }
+      if (data?.error) message = data.error
+    } catch {
+      // 非 JSON 错误响应
+    }
+    throw new Error(message)
+  }
+  return response.json()
+}
+
+export async function resolveWithPlugin(
+  pluginId: string,
+  candidateId: string
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`/api/plugins/${pluginId}/resolve`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ candidateId })
+  })
+  if (!response.ok) {
+    let message = '插件详情请求失败'
+    try {
+      const data = (await response.json()) as { error?: string }
+      if (data?.error) message = data.error
+    } catch {
+      // 非 JSON 错误响应
+    }
+    throw new Error(message)
+  }
+  // 详情接口直接返回插件结果对象。
   return response.json()
 }

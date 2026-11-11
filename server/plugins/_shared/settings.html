@@ -63,7 +63,7 @@
         user-select: none;
       }
       .chip input { accent-color: var(--blue); margin: 0; }
-      input[type="text"], select {
+      input[type="text"], input[type="password"], select {
         width: 100%;
         height: 28px;
         border: 1px solid var(--line);
@@ -74,8 +74,8 @@
         background: #fff;
         outline: 0;
       }
-      input[type="text"] { font-family: var(--mono); font-size: 11px; }
-      input[type="text"]:focus, select:focus {
+      input[type="text"], input[type="password"] { font-family: var(--mono); font-size: 11px; }
+      input[type="text"]:focus, input[type="password"]:focus, select:focus {
         border-color: #9db8ef;
         box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.12);
       }
@@ -141,6 +141,12 @@
         <option>日语</option>
         <option>英文</option>
       </select>
+    </div>
+
+    <div class="field" id="tokenField" style="display: none">
+      <label>访问令牌</label>
+      <input type="password" id="token" autocomplete="new-password" spellcheck="false" />
+      <div class="hint" id="tokenHint"></div>
     </div>
 
     <div class="field">
@@ -216,6 +222,16 @@
         $("lang").value = config.lang || "中文";
         $("naming").value = config.naming || "";
         $("organize").value = config.organize || "";
+        // 只有插件声明了 token 字段才显示；值始终不回显。
+        const hasToken = Object.prototype.hasOwnProperty.call(config, "token");
+        $("tokenField").style.display = hasToken ? "" : "none";
+        if (hasToken) {
+          $("token").value = "";
+          $("token").placeholder = config.token ? "已设置，留空则保持不变" : "可选，需要登录时填写";
+          $("tokenHint").textContent = config.token
+            ? "已保存访问令牌（不回显）。输入新令牌可覆盖，留空保持不变。"
+            : "仅保存在本机 config.json；JavDB 要求登录时填写。";
+        }
         updateExamples();
       }
 
@@ -240,6 +256,9 @@
         config.lang = $("lang").value;
         config.naming = $("naming").value;
         config.organize = $("organize").value;
+        const token = $("token").value.trim();
+        if (token) config.token = token;
+        else delete config.token;
         return config;
       }
 

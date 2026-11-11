@@ -28,6 +28,20 @@ export interface PluginConfig {
   downloads: SourceOpt[]
   naming: string
   organize: string
+  /** JavDB / AV：用户自行提供的 JWT，只在本地保存，不回显。 */
+  token?: string
+}
+
+/** 回显给前端时脱敏的配置字段。 */
+const SECRET_FIELDS = ['token'] as const
+export const SECRET_MASK = '••••••••'
+
+export function maskConfig<T extends object>(config: T): T {
+  const out = { ...config } as Record<string, unknown>
+  for (const key of SECRET_FIELDS) {
+    if (typeof out[key] === 'string' && out[key]) out[key] = SECRET_MASK
+  }
+  return out as T
 }
 
 export interface PluginManifest {

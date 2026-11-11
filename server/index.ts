@@ -10,6 +10,8 @@ import {
   getPlugins,
   loadAll,
   loadOverrides,
+  maskConfig,
+  SECRET_MASK,
   reload,
   reloadAll,
   setReloadListener,
@@ -217,7 +219,7 @@ function serialize(id: string, origin: string) {
     codeLabel: m.labels.code,
     titleLabel: m.labels.title,
     settingsUrl: `${origin}/plugins/${m.id}/settings/`,
-    ...plugin.config
+    ...maskConfig(plugin.config)
   }
 }
 
@@ -301,11 +303,13 @@ async function handlePlugins(req: Request, url: URL, parts: string[]) {
   if (!plugin) return json({ error: `插件不存在: ${id}` }, 404)
 
   if (action === 'config') {
-    if (req.method === 'GET') return json(plugin.config)
+    if (req.method === 'GET') return json(maskConfig(plugin.config))
     if (req.method === 'PUT') {
       const body = ensureObject(await readJson(req), 'config')
+      // 前端拿不到明文；回传脱敏占位符时视为“保持不变”。
+      if (body.token === SECRET_MASK) delete body.token
       const next = await updateConfig(id, body)
-      return json(next)
+      return json(maskConfig(next))
     }
     return methodNotAllowed()
   }

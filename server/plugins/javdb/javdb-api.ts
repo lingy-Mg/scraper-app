@@ -141,14 +141,22 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
   return run
 }
 
-async function requestOnce(host: string, path: string, params: Record<string, string>): Promise<Envelope> {
+async function requestOnce(
+  host: string,
+  path: string,
+  params: Record<string, string>,
+  token?: string
+): Promise<Envelope> {
   const query = new URLSearchParams({ ...PUBLIC, device_uuid: await deviceUUID(), ...params })
+  const headers: Record<string, string> = {
+    'user-agent': USER_AGENT,
+    'accept-language': 'zh-CN',
+    jdsignature: signature()
+  }
+  // 上游要求登录时用户可自行提供 JWT；没有令牌时保持匿名请求。
+  if (token) headers.authorization = `Bearer ${token}`
   const response = await fetch(`${host}${path}?${query}`, {
-    headers: {
-      'user-agent': USER_AGENT,
-      'accept-language': 'zh-CN',
-      jdsignature: signature()
-    },
+    headers,
     signal: AbortSignal.timeout(15000)
   })
   const text = await response.text()
@@ -165,7 +173,16 @@ async function requestOnce(host: string, path: string, params: Record<string, st
   return body
 }
 
-async function request(path: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
+/** 上游鉴权失败的典型返回（JWTVerificationError / LoginRequired / 請登錄帳號）。 */
+function isAuthFailure(message: string): boolean {
+  return /JWTVerificationError|LoginRequired|JWT|請登錄|请登录|未登录|not\s*login/i.test(message)
+}
+
+async function request(
+  path: string,
+  params: Record<string, string> = {},
+  token?: string
+): Promise<Record<string, unknown>> {
   return enqueue(async () => {
     const ordered = cachedHost
       ? [cachedHost, ...HOSTS.filter((host) => host !== cachedHost)]
@@ -175,7 +192,7 @@ async function request(path: string, params: Record<string, string> = {}): Promi
     for (const host of ordered) {
       try {
         await waitForSlot()
-        const body = await requestOnce(host, path, params)
+        const body = await requestOnce(host, path, params, token)
         if (!isSuccess(body.success)) {
           throw new Error(`${body.action || 'api'}: ${body.message || '请求失败'}`)
         }
@@ -186,6 +203,14 @@ async function request(path: string, params: Record<string, string> = {}): Promi
       }
     }
 
+    // 不把上游堆栈直接丢给用户：鉴权失败时给出可操作的中文提示。
+    if (failures.some(isAuthFailure)) {
+      throw new Error(
+        token
+          ? 'JavDB 登录已失效：请更新 JavDB 插件设置中的访问令牌'
+          : 'JavDB 需要登录：请在 JavDB 插件设置中填写访问令牌'
+      )
+    }
     throw new Error(`JavDB 请求失败：${failures.join('；')}`)
   })
 }
@@ -309,27 +334,48 @@ function cached<T>(key: string, loader: () => Promise<T>): Promise<T> {
   })
 }
 
-export async function searchMovies(keyword: string, limit = 10): Promise<JavdbMovie[]> {
-  const data = await request('/api/v2/search', {
-    q: keyword,
-    page: '1',
-    limit: String(Math.min(Math.max(limit, 1), 50))
-  })
+export async function searchMovies(
+  keyword: string,
+  limit = 10,
+  token?: string
+): Promise<JavdbMovie[]> {
+  const data = await request(
+    '/api/v2/search',
+    {
+      q: keyword,
+      page: '1',
+      limit: String(Math.min(Math.max(limit, 1), 50))
+    },
+    token
+  )
   const movies = Array.isArray(data.movies) ? (data.movies as Record<string, unknown>[]) : []
   return movies.map(toMovie).filter((movie) => movie.id)
 }
 
-export async function movieDetail(id: string): Promise<JavdbMovie> {
+export async function movieDetail(id: string, token?: string): Promise<JavdbMovie> {
   return cached(`detail:${id}`, async () => {
-    const data = await request(`/api/v4/movies/${encodeURIComponent(id)}`)
+    const data = await request(`/api/v4/movies/${encodeURIComponent(id)}`, {}, token)
     const raw = (data.movie ?? data) as Record<string, unknown>
     return toMovie(raw)
   })
 }
 
-export async function movieMagnets(id: string): Promise<Array<Record<string, unknown>>> {
-  const data = await request(`/api/v1/movies/${encodeURIComponent(id)}/magnets`)
-  return Array.isArray(data.magnets) ? (data.magnets as Array<Record<string, unknown>>) : []
+function toMagnet(raw: Record<string, unknown>) {
+  return {
+    name: stringValue(raw.name ?? raw.title),
+    hash: stringValue(raw.hash),
+    size: stringValue(raw.size),
+    cnsub: Boolean(raw.cnsub),
+    hd: Boolean(raw.hd),
+    filesCount: numberValue(raw.files_count) ?? 0,
+    pikpakUrl: stringValue(raw.pikpak_url) || undefined
+  }
+}
+
+export async function movieMagnets(id: string, token?: string) {
+  const data = await request(`/api/v1/movies/${encodeURIComponent(id)}/magnets`, {}, token)
+  const list = Array.isArray(data.magnets) ? (data.magnets as Record<string, unknown>[]) : []
+  return list.map(toMagnet).filter((magnet) => magnet.hash)
 }
 
 /**
@@ -339,9 +385,10 @@ export async function movieMagnets(id: string): Promise<Array<Record<string, unk
  */
 export async function javdbIdentify(
   filename: string,
-  options: { allowTitle?: boolean } = {}
+  options: { allowTitle?: boolean; token?: string } = {}
 ): Promise<JavdbCandidate[]> {
   const allowTitle = Boolean(options.allowTitle)
+  const token = options.token?.trim() || undefined
   return cached(`identify:${allowTitle ? 't' : 'c'}:${filename}`, async () => {
     const code = extractCode(filename)
     // AV/JavDB 模式默认只认番号：文件名没有番号时不要用标题去模糊搜索。
@@ -349,7 +396,7 @@ export async function javdbIdentify(
     const keyword = code || cleanName(filename)
     if (!keyword) return []
 
-    const movies = await searchMovies(keyword, code ? 20 : 8)
+    const movies = await searchMovies(keyword, code ? 20 : 8, token)
 
     if (!code) {
       return movies.map(toCandidate)
@@ -364,7 +411,7 @@ export async function javdbIdentify(
     const candidates: JavdbCandidate[] = []
     for (const movie of [...unique.values()].slice(0, 3)) {
       try {
-        const detail = await movieDetail(movie.id)
+        const detail = await movieDetail(movie.id, token)
         candidates.push(toCandidate({ ...movie, ...detail }))
       } catch {
         candidates.push(toCandidate(movie))
@@ -374,11 +421,14 @@ export async function javdbIdentify(
   })
 }
 
-export async function javdbDetail(id: string): Promise<JavdbMovie & { magnets?: Array<Record<string, unknown>> }> {
-  const movie = await movieDetail(id)
-  let magnets: Array<Record<string, unknown>> = []
+export async function javdbDetail(
+  id: string,
+  token?: string
+): Promise<JavdbMovie & { magnets?: ReturnType<typeof toMagnet>[] }> {
+  const movie = await movieDetail(id, token?.trim() || undefined)
+  let magnets: ReturnType<typeof toMagnet>[] = []
   try {
-    magnets = await movieMagnets(id)
+    magnets = await movieMagnets(id, token?.trim() || undefined)
   } catch {
     // 磁力失败不影响详情
   }
