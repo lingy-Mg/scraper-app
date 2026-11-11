@@ -17,7 +17,13 @@ npm run start          # 单进程生产启动：Bun 托管 dist + API，并打�
 
 npx tsc --noEmit
 bun build server/index.ts --target=bun --outfile="$env:TEMP\server-check.js"
+
+bun test               # 单元测试（test/，临时目录隔离、mock 网络）
+bun run smoke          # HTTP 端到端冒烟（随机端口 + 临时数据目录）
+bun run check          # 一键自检：tsc → bun build → bun test → npm run build
 ```
+
+测试约束：所有测试/脚本必须通过 `SCRAPER_DATA_DIR` 指向 `mkdtemp` 临时目录，不得读写项目 `data/` 或系统临时目录以外的用户数据；测试不联网。
 
 环境：Windows 10/11 x64；Node 26、Bun 1.3、WebView 浏览器（Edge/Chrome）。
 AI 识别可走本机 `opencode` CLI（需在 PATH 中）。服务只监听 `127.0.0.1`。
@@ -95,7 +101,7 @@ AI 识别可走本机 `opencode` CLI（需在 PATH 中）。服务只监听 `127
 
 1. 先读 `docs/AI_HANDOFF.md` 与当前契约文档。
 2. 明确改动属于前端 / Bun 哪一层，保持契约一致。
-3. 小步修改并立即验证：`npx tsc --noEmit`、`bun build server/index.ts --target=bun`。
+3. 小步修改并立即验证：`bun run check`；改后端逻辑时加跑 `bun run smoke`；只改类型时至少 `npx tsc --noEmit`。
 4. 涉及 UI 时用 `npm run dev` 起服务，浏览器验证关键路径。
 5. 完成后更新 `docs/ROADMAP.md` 的完成项与 `docs/AI_HANDOFF.md` 的状态。
 6. 交付：`npm run build` 后 `npm run start`，浏览器访问 `http://127.0.0.1:5174`。

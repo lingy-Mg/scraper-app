@@ -50,11 +50,20 @@
 - 重复文件检测（同 size + 时长 + 番号）
 - 统计页（数量/大小/成功率/耗时）
 
-### P5 自动化测试
+### P5 自动化测试（基础部分已完成）
 
-- Bun：扫描/整理/媒体库/AI 解析的单元测试
-- UI：Playwright 或浏览器脚本覆盖扫描→刮削→整理→重载
-- 验收：CI 可跑 `tsc --noEmit` + `bun build server/index.ts` + `vite build`
+- [x] Bun 单元测试（`test/`，6 个文件 42 个用例，全部用 `mkdtemp` + `SCRAPER_DATA_DIR` 隔离）
+  - 扫描：黑名单大小写/`*`/`?`/包含匹配、隐藏目录/符号链接/`.d.ts`/非视频过滤、MP4 时长、短片判定（`dur=0` 不算）
+  - 整理：`../` 与绝对路径越界拒绝、rename/skip/overwrite、move/copy、NFO 写入、空源目录清理、单项失败隔离
+  - 媒体库：upsert/list 字段往返、重复 upsert 不产生重复行、remove、按模式 clear、全量 clear
+  - 插件：内置加载、`capabilities` 默认值、用户同 id 覆盖、坏插件 error 隔离、reload 生效、缓存只保留最新 2 个
+  - 文件浏览：相对/不存在/非目录 400、隐藏目录标记、父目录
+  - JavDB：有/无令牌的 `authorization: Bearer` 请求头、鉴权错误中文化、配置脱敏（mock fetch，不联网）
+- [x] HTTP 端到端冒烟（`scripts/smoke.mjs`）：随机端口 + 临时数据目录，覆盖扫描（含 NDJSON 流）→ 探测 → 媒体库 → 整理 + NFO → 回收站
+- [x] 一键自检（`bun run check`）：`tsc --noEmit` → `bun build` → `bun test` → `npm run build`
+- [ ] UI：Playwright 或浏览器脚本覆盖扫描→刮削→整理→重载（前端交互仍未覆盖）
+- [ ] 真实网络：JavDB / TMDB / Bangumi / OpenCode CLI（当前全部 mock 或离线）
+- 验收：`bun test`、`bun run smoke`、`bun run check` 均退出码 0
 
 ### P6 体验
 

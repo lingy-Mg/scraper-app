@@ -59,12 +59,16 @@ server/
     _shared/settings.html
     av/  javdb/{plugin.json,index.ts,javdb-api.ts}
     movie/  tv/  anime/{plugin.json,index.ts,bangumi.ts}
-  data/                       # 运行时（gitignore）
-    plugins/                  # 用户插件（可选，同 id 覆盖内置）
-    .plugin-cache/            # Bun.build 产物
+test/                         # bun:test 单元测试（mkdtemp + SCRAPER_DATA_DIR 隔离）
 scripts/
   dev.mjs                     # 开发：Bun watch + Vite
   start.mjs                   # 生产：单进程启动 + 打开浏览器
+  smoke.mjs                   # HTTP 端到端冒烟（随机端口 + 临时数据目录）
+  check.mjs                   # 一键自检：tsc → bun build → bun test → npm run build
+data/                         # 项目根运行时目录（gitignore）
+  plugins/                    # 用户插件（可选，同 id 覆盖内置）
+  .plugin-cache/              # Bun.build 产物
+  library.db / settings.json / config.json / covers/
 docs/                         # 契约与协议
 AGENTS.md
 ```
@@ -218,11 +222,23 @@ CREATE TABLE items (
 
 ## 9. 验证与测试
 
+自动化（不联网、不读写项目 `data/`）：
+
 ```powershell
-npx tsc --noEmit
-bun build server/index.ts --target=bun --outfile="$env:TEMP\server-check.js"
-npm run build
+bun test          # 6 个文件 42 个用例：扫描/整理/媒体库/插件/文件浏览/JavDB 令牌
+bun run smoke     # HTTP 端到端：扫描（含 NDJSON 流）→ 探测 → 媒体库 → 整理+NFO → 回收站
+bun run check     # 一键：tsc --noEmit → bun build → bun test → npm run build，任一步失败退出 1
 ```
+
+测试隔离方式：
+
+- 每个测试文件在 `beforeAll` 用 `mkdtemp(join(tmpdir(), ...))` 建临时目录，设置 `SCRAPER_DATA_DIR` 后再动态 `import` 被测模块；`afterAll` 删除目录。
+- 服务端所有数据路径（设置/媒体库/封面/插件配置与缓存/JavDB 设备号）在调用时解析 `SCRAPER_DATA_DIR`，不要改回模块顶层常量，否则并发测试会串目录。
+- SQLite 测试结束需 `closeLibrary()` + `Bun.gc(true)`，否则 Windows 上临时目录删除报 EBUSY。
+- 冒烟脚本用 `Bun.spawn` 启动 `server/index.ts`，随机高位端口，`finally` 中 `child.kill()`（必要时 SIGKILL）并删临时目录；不得用 shell `kill $!`，避免残留进程。
+- JavDB 网络请求全部 mock `globalThis.fetch`，断言 Bearer 头、中文鉴权错误与 `maskConfig` 脱敏。
+
+未覆盖（需手工或后续补齐）：前端 UI 交互（Playwright）、真实 JavDB/TMDB/Bangumi/OpenCode 网络、非 MP4 且无 ffprobe 的时长、真实回收站还原。
 
 手工端到端：
 
@@ -257,4 +273,4 @@ npm run start   # Bun 单进程托管 dist + API，并打开浏览器
 2. 任何接口改动先改契约文档，再改 Bun/前端。
 3. 不要删除 `server/plugins/*`：插件列表决定模式切换；`movie/tv/anime` 虽为占位，但被模式 UI 使用。
 4. 不要把测试数据、真实 Key、`data/` 提交到仓库。
-5. 提交前跑完整 `npx tsc --noEmit` + `bun build server/index.ts`；UI 改动至少手工验证一次关键路径。
+5. 提交前跑 `bun run check`（tsc + bun build + bun test + 前端构建）；改后端逻辑时同时跑 `bun run smoke`；UI 改动至少手工验证一次关键路径。
