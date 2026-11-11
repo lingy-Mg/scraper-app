@@ -87,11 +87,21 @@ AI 识别可走本机 `opencode` CLI（需在 PATH 中）。
 - 打包版不启动 Bun 插件宿主；四个内置模式走 Rust 原生 provider，仍可用。
 - 测试数据目录：`server/data/`（开发）与 `%APPDATA%\com.scraper.desktop\`（打包版）。
 
+## Git 规范（强制）
+
+- 本仓库是**本地仓库**，只提交、**不推送**，不配置 remote。
+- **每完成一个小范围改动就提交一次**，不要攒大批改动。
+- 提交信息：`<type>(<scope>): <中文简述>`，type 取 `feat/fix/refactor/perf/docs/test/chore/build`。
+- 提交前必须跑通相关验证（`npx tsc --noEmit`、`bun build`、`cargo check`）。
+- 禁止提交 `server/data/`（含密钥与媒体库）、`node_modules/`、`dist/`、`src-tauri/target/`。
+- 不要 `push`、不要 `reset --hard`、不要改写已提交历史。
+- 完整细则见 [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)。
+
 ## 继续开发流程
 
 1. 先读 `docs/AI_HANDOFF.md` 与当前契约文档。
-2. 明确改动属于前端 / Bun / Rust 哪几层，保持三端一致。
+2. 明确改动属于前端 / Bun / Rust 哪几层，保持接口一致。
 3. 小步修改并立即验证：`npx tsc --noEmit`、Bun 构建、`cargo test --lib`。
 4. 涉及 UI 时用 `npm run dev` 起服务，手工或浏览器验证关键路径。
-5. 完成后更新 `docs/ROADMAP.md` 的完成项与 `docs/AI_HANDOFF.md` 的状态。
-6. 交付桌面：`npm run pack:desktop`，只复制单个 exe。
+5. **每个小改动完成后立即 `git commit`**（不推送）。
+6. 完成后更新 `docs/ROADMAP.md` 的完成项与 `docs/AI_HANDOFF.md` 的状态。
