@@ -413,7 +413,10 @@ export async function tmdbIdentify(
 
 function stripDetailPrefix(id: string, mediaType: MediaType): string {
   const value = String(id ?? '').trim()
-  return value.replace(new RegExp(`^(?:${mediaType}:)`, 'i'), '')
+  // 兼容 `movie:123`、`tmdb:movie:123` 与直接传数字 ID。
+  return value
+    .replace(/^tmdb:/i, '')
+    .replace(new RegExp(`^(?:${mediaType}:)`, 'i'), '')
 }
 
 /** 详情：追加 credits，并把时长从分钟换算为秒。 */

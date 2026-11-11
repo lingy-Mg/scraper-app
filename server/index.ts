@@ -16,7 +16,14 @@ import {
   watchPlugins
 } from './registry'
 import { findFfprobe, probeFile, scanFolder, scanFolderStream } from './scan'
-import { loadSettings, saveSettings, type AIConfig, type Settings } from './settings'
+import {
+  loadModeConfig,
+  loadSettings,
+  saveSettings,
+  type AIConfig,
+  type Settings
+} from './settings'
+import { bangumiDetail, bangumiIdentify } from './providers/bangumi'
 import { aiIdentify, aiPick, aiTest, type Candidate } from './ai'
 import { cacheCover } from './covers'
 import {
@@ -26,8 +33,6 @@ import {
   upsertItems,
   type LibraryItem
 } from './library'
-import { tmdbDetail, tmdbIdentify } from './providers/tmdb'
-import { bangumiDetail, bangumiIdentify } from './providers/bangumi'
 import {
   openPath,
   organizeFiles,
@@ -234,7 +239,8 @@ async function identifyPlugin(
 ) {
   const plugin = requirePlugin(id)
   if (typeof plugin.impl?.identify !== 'function') throw new Error('插件未实现 identify')
-  return plugin.impl.identify({ filename, allowTitle, config: plugin.config, options })
+  const modeConfig = await loadModeConfig(id)
+  return plugin.impl.identify({ filename, allowTitle, config: plugin.config, options, modeConfig })
 }
 
 async function resolvePlugin(
@@ -244,7 +250,8 @@ async function resolvePlugin(
 ) {
   const plugin = requirePlugin(id)
   if (typeof plugin.impl?.resolve !== 'function') throw new Error('插件未实现 resolve')
-  return plugin.impl.resolve({ config: plugin.config, options }, candidateId)
+  const modeConfig = await loadModeConfig(id)
+  return plugin.impl.resolve({ config: plugin.config, options, modeConfig }, candidateId)
 }
 
 async function handlePlugins(req: Request, url: URL, parts: string[]) {
@@ -645,32 +652,6 @@ async function handleApi(req: Request, url: URL) {
       const body = ensureObject(await readJson(req), 'request')
       const mode = typeof body.mode === 'string' && body.mode ? body.mode : undefined
       return json({ count: clearItems(mode) })
-    }
-
-    return json({ error: 'not found' }, 404)
-  }
-
-  if (route === 'tmdb') {
-    const action = parts[2]
-
-    if (action === 'identify') {
-      if (req.method !== 'POST') return methodNotAllowed()
-      const body = ensureObject(await readJson(req), 'request')
-      const filename = requireString(body.filename, 'filename')
-      const apiKey = requireString(body.apiKey, 'apiKey')
-      const mediaType = enumValue<'movie' | 'tv'>(body.mediaType, ['movie', 'tv'], 'mediaType', 'movie')
-      const lang = typeof body.lang === 'string' && body.lang ? body.lang : undefined
-      return json({ candidates: await tmdbIdentify(filename, mediaType, apiKey, lang) })
-    }
-
-    if (action === 'detail') {
-      if (req.method !== 'POST') return methodNotAllowed()
-      const body = ensureObject(await readJson(req), 'request')
-      const id = requireString(body.id, 'id')
-      const apiKey = requireString(body.apiKey, 'apiKey')
-      const mediaType = enumValue<'movie' | 'tv'>(body.mediaType, ['movie', 'tv'], 'mediaType', 'movie')
-      const lang = typeof body.lang === 'string' && body.lang ? body.lang : undefined
-      return json(await tmdbDetail(id, mediaType, apiKey, lang))
     }
 
     return json({ error: 'not found' }, 404)

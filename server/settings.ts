@@ -100,6 +100,17 @@ export async function loadSettings(): Promise<Settings> {
   }
 }
 
+/** 读取某个模式（插件 id）的前端配置快照，供插件自行取用语言/密钥。 */
+export async function loadModeConfig(id: string): Promise<Record<string, unknown>> {
+  const settings = await loadSettings()
+  const modes = settings.modes
+  if (!modes || typeof modes !== 'object' || Array.isArray(modes)) return {}
+  const value = (modes as Record<string, unknown>)[id]
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
 /** 整体覆盖写入，临时文件 + rename，保证原子性。 */
 export async function saveSettings(settings: Settings): Promise<void> {
   await mkdir(DATA_DIR, { recursive: true })

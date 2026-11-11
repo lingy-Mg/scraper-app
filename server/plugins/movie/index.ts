@@ -1,3 +1,4 @@
-import { makePlugin } from '../_shared/simple'
+import { makeTmdbPlugin } from '../_shared/tmdb-plugin'
 
-export default makePlugin('movie')
+/** 电影插件：TMDB 搜索与详情。 */
+export default makeTmdbPlugin('movie')
