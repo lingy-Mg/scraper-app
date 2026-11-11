@@ -411,6 +411,98 @@ async function main() {
       assert(library.total === 3, '删除来源不应删除媒体库记录', library.total)
     })
 
+    await step('设置导出默认脱敏 / includeSecrets=1', async () => {
+      const settings = await request(baseUrl, '/api/settings')
+      settings.ai = {
+        ...settings.ai,
+        apiKey: 'smoke-secret-api-key',
+        model: 'smoke-model'
+      }
+      settings.modes = {
+        ...(settings.modes ?? {}),
+        tmdb: { tmdbApiKey: 'smoke-tmdb-key', lang: 'zh-CN' },
+        javdb: { token: 'smoke-javdb-token' }
+      }
+      await request(baseUrl, '/api/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(settings)
+      })
+
+      const response = await fetch(`${baseUrl}/api/settings/export`)
+      assert(response.ok, `默认导出 HTTP ${response.status}`)
+      const disposition = response.headers.get('content-disposition') ?? ''
+      assert(
+        disposition.includes('attachment') && disposition.includes('.json'),
+        '导出响应缺少 Content-Disposition 下载头',
+        disposition
+      )
+      const exported = await response.json()
+      assert(exported.app === 'scraper' && exported.version === 1, '导出文件头不符', exported)
+      assert(exported.includesSecrets === false, '默认导出应标记为脱敏', exported)
+      const text = JSON.stringify(exported.settings)
+      for (const field of ['apiKey', 'tmdbApiKey', 'token']) {
+        assert(!text.includes(`"${field}"`), `默认导出不应包含字段 ${field}`, Object.keys(exported.settings))
+      }
+      for (const secret of ['smoke-secret-api-key', 'smoke-tmdb-key', 'smoke-javdb-token']) {
+        assert(!text.includes(secret), '默认导出泄露了密钥明文')
+      }
+      assert(exported.settings.ai.model === 'smoke-model', '脱敏不应移除普通字段', exported.settings.ai)
+      console.log(`  导出默认字段：${Object.keys(exported.settings).join(', ')}`)
+
+      const fullResponse = await fetch(`${baseUrl}/api/settings/export?includeSecrets=1`)
+      assert(fullResponse.ok, `includeSecrets=1 导出 HTTP ${fullResponse.status}`)
+      const full = await fullResponse.json()
+      assert(full.includesSecrets === true, 'includeSecrets=1 应标记包含密钥', full)
+      const fullText = JSON.stringify(full.settings)
+      for (const secret of ['smoke-secret-api-key', 'smoke-tmdb-key', 'smoke-javdb-token']) {
+        assert(fullText.includes(secret), 'includeSecrets=1 应保留密钥')
+      }
+
+      const badQuery = await fetch(`${baseUrl}/api/settings/export?includeSecrets=2`)
+      assert(badQuery.status === 400, '非法 includeSecrets 应返回 400', badQuery.status)
+    })
+
+    await step('设置导入：合法合并 / 非法 400 不改动', async () => {
+      const before = await request(baseUrl, '/api/settings')
+      const imported = await request(baseUrl, '/api/settings/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          settings: {
+            theme: 'dark',
+            minDur: 6,
+            table: { widths: { file: 321 } },
+            blacklist: ['*.tmp']
+          }
+        })
+      })
+      assert(imported.ok === true, '导入应成功', imported)
+      for (const field of ['theme', 'minDur', 'table', 'blacklist']) {
+        assert(imported.applied.includes(field), `导入结果缺少 applied.${field}`, imported.applied)
+      }
+
+      const after = await request(baseUrl, '/api/settings')
+      assert(after.theme === 'dark', '导入后主题未写入', after.theme)
+      assert(after.minDur === 6, '导入后短片阈值未写入', after.minDur)
+      assert(after.table?.widths?.file === 321, '导入后列宽未写入', after.table)
+      assert(after.blacklist?.includes('*.tmp'), '导入后黑名单未写入', after.blacklist)
+      assert(after.ai.apiKey === before.ai.apiKey, '脱敏导入不应清空已有密钥')
+
+      const invalid = await fetch(`${baseUrl}/api/settings/import`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ settings: { theme: 'neon' } })
+      })
+      assert(invalid.status === 400, '非法导入应返回 400', invalid.status)
+      const unchanged = await request(baseUrl, '/api/settings')
+      assert(
+        JSON.stringify(unchanged) === JSON.stringify(after),
+        '非法导入不应改动现有设置',
+        unchanged
+      )
+    })
+
     await step('POST /api/organize（copy + NFO 落盘）', async () => {
       const nfo = '<movie><title>冒烟测试影片</title></movie>'
       const results = await request(baseUrl, '/api/organize', {
