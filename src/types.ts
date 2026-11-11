@@ -62,6 +62,12 @@ export interface SubtitleInfo {
   language?: string
 }
 
+/** 模式配置里的下载开关；整理请求携带给后端决定字幕/预告片/NFO/封面行为。 */
+export interface DownloadOption {
+  label: string
+  on: boolean
+}
+
 export interface OrganizeItem {
   source: string
   relativeTarget: string
@@ -71,6 +77,8 @@ export interface OrganizeItem {
   posterUrl?: string
   /** 可选：手动裁剪区域；为空时保存完整封面 */
   posterCrop?: CropRect
+  /** 可选：预告片地址；「预告片」开启时写入 NFO <trailer>，不下载视频 */
+  trailerUrl?: string
 }
 
 export interface OrganizeRequest {
@@ -78,6 +86,8 @@ export interface OrganizeRequest {
   action: 'move' | 'copy'
   conflict: 'skip' | 'overwrite' | 'rename'
   removeEmptyDirs?: boolean
+  /** 当前模式的插件 downloads 配置；省略时后端保持旧行为。 */
+  downloads?: DownloadOption[]
   items: OrganizeItem[]
 }
 

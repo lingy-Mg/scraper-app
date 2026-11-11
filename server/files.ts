@@ -8,14 +8,21 @@ import {
   unlink,
   writeFile
 } from 'node:fs/promises'
-import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { cropImage, decodeCover } from './image'
 import type { CropRect } from './covers'
+import { findSubtitles, type SubtitleMatch } from './subtitles'
 
 export type OrganizeAction = 'move' | 'copy'
 export type ConflictPolicy = 'skip' | 'overwrite' | 'rename'
+
+/** 模式配置里的下载开关；由前端随整理请求传入。 */
+export interface DownloadOption {
+  label: string
+  on: boolean
+}
 
 export interface OrganizeItem {
   source: string
@@ -26,6 +33,8 @@ export interface OrganizeItem {
   posterUrl?: string
   /** 可选：手动裁剪区域；为空时保存完整封面 */
   posterCrop?: CropRect
+  /** 可选：预告片地址；「预告片」开关开启时写入 NFO 的 <trailer>，不下载视频 */
+  trailerUrl?: string
 }
 
 export interface OrganizeRequest {
@@ -33,6 +42,11 @@ export interface OrganizeRequest {
   action?: OrganizeAction
   conflict?: ConflictPolicy
   removeEmptyDirs?: boolean
+  /**
+   * 当前模式的插件 `downloads` 配置。
+   * 省略时保持旧行为：不复制字幕、不注入预告片、不校验 NFO/封面开关。
+   */
+  downloads?: DownloadOption[]
   items: OrganizeItem[]
 }
 
@@ -142,17 +156,51 @@ async function removeSourceDirs(dest: string, sources: string[]): Promise<void> 
   }
 }
 
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+/** 在 NFO 的 </movie> 前插入 <trailer>；已有 trailer 时不重复。 */
+function nfoWithTrailer(nfo: string, trailerUrl: string): string {
+  if (/<trailer(?:\s[^>]*)?>[\s\S]*?<\/trailer>/i.test(nfo)) return nfo
+  const tag = `  <trailer>${escapeXml(trailerUrl)}</trailer>`
+  const close = nfo.toLowerCase().lastIndexOf('</movie>')
+  if (close >= 0) {
+    const before = nfo.slice(0, close)
+    const separator = before.endsWith('\n') ? '' : '\n'
+    return `${before}${separator}${tag}\n${nfo.slice(close)}`
+  }
+  return `${nfo.trimEnd()}\n${tag}\n`
+}
+
+interface SidecarOptions {
+  /** 仅当「预告片」开关开启且 item 带地址时写入。 */
+  trailerUrl?: string
+  /** 仅在整批中写一次「背景图暂不支持」warning。 */
+  backgroundUnsupported?: boolean
+}
+
 /** 整理成功后写入 NFO、下载封面；失败只记 warning，不影响主文件结果。 */
-async function writeSidecars(target: string, item: OrganizeItem): Promise<string[]> {
+async function writeSidecars(
+  target: string,
+  item: OrganizeItem,
+  options: SidecarOptions = {}
+): Promise<string[]> {
   const warnings: string[] = []
-  if (!item.nfo && !item.posterUrl) return warnings
+  if (!item.nfo && !item.posterUrl && !options.backgroundUnsupported) return warnings
 
   const ext = extname(target)
   const stem = target.slice(0, target.length - ext.length)
 
   if (item.nfo) {
     try {
-      await writeFile(`${stem}.nfo`, item.nfo, 'utf8')
+      const nfo = options.trailerUrl ? nfoWithTrailer(item.nfo, options.trailerUrl) : item.nfo
+      await writeFile(`${stem}.nfo`, nfo, 'utf8')
     } catch (error) {
       warnings.push(`写入 NFO 失败：${errorMessage(error)}`)
     }
@@ -177,6 +225,59 @@ async function writeSidecars(target: string, item: OrganizeItem): Promise<string
     }
   }
 
+  if (options.backgroundUnsupported) warnings.push('背景图暂不支持，未生成文件')
+  return warnings
+}
+
+function safeSuffix(value: string): string {
+  return value
+    .replace(/[\\/:*?"<>|\s]+/g, '_')
+    .replace(/^\.+|\.+$/g, '')
+}
+
+/**
+ * 把匹配到的本地字幕复制到目标视频旁。
+ * 命名：`<目标视频 basename>[.<语言>].<ext>`；只复制，不删除源文件。
+ */
+async function copySubtitles(
+  dest: string,
+  target: string,
+  matches: SubtitleMatch[],
+  conflict: ConflictPolicy
+): Promise<string[]> {
+  const warnings: string[] = []
+  if (!matches.length) return warnings
+
+  const targetExt = extname(target)
+  const stem = targetExt ? target.slice(0, target.length - targetExt.length) : target
+
+  for (const subtitle of matches) {
+    try {
+      const ext = extname(subtitle.path) || `.${subtitle.format}`
+      const language = subtitle.language ? safeSuffix(subtitle.language) : ''
+      const suffix = language ? `.${language}` : ''
+      let subtitleTarget = resolve(dirname(target), `${stem}${suffix}${ext}`)
+
+      if (!isInside(dest, subtitleTarget)) throw new Error('字幕目标路径越界')
+      if (isSamePath(subtitle.path, subtitleTarget)) continue
+
+      if (await pathExists(subtitleTarget)) {
+        if (conflict === 'skip') continue
+        if (conflict === 'overwrite') {
+          const info = await stat(subtitleTarget)
+          if (info.isDirectory()) throw new Error('字幕目标路径是目录')
+          await unlink(subtitleTarget)
+        } else {
+          subtitleTarget = await uniqueTarget(subtitleTarget)
+        }
+      }
+
+      await copyFile(subtitle.path, subtitleTarget)
+    } catch (error) {
+      warnings.push(`复制字幕失败（${basename(subtitle.path)}）：${errorMessage(error)}`)
+    }
+  }
+
   return warnings
 }
 
@@ -189,6 +290,10 @@ export async function organizeFiles(request: OrganizeRequest): Promise<OrganizeR
       : 'rename'
 
   const results: OrganizeResult[] = []
+  const downloads = Array.isArray(request.downloads) ? request.downloads : undefined
+  const enabled = (label: string) =>
+    !!downloads && downloads.some((option) => option.on && option.label === label)
+  let backgroundWarned = false
 
   for (const item of request.items) {
     const source = resolve(item.source)
@@ -209,6 +314,18 @@ export async function organizeFiles(request: OrganizeRequest): Promise<OrganizeR
           skipped: true
         })
         continue
+      }
+
+      // 「字幕」开启时必须在 move 之前扫描：移动后源文件已不存在。
+      const wantSubtitles = !!downloads && enabled('字幕')
+      let subtitleMatches: SubtitleMatch[] = []
+      const subtitleWarnings: string[] = []
+      if (wantSubtitles) {
+        try {
+          subtitleMatches = await findSubtitles(source)
+        } catch (error) {
+          subtitleWarnings.push(`匹配字幕失败：${errorMessage(error)}`)
+        }
       }
 
       await mkdir(dirname(target), { recursive: true })
@@ -239,7 +356,24 @@ export async function organizeFiles(request: OrganizeRequest): Promise<OrganizeR
         await moveFile(source, target)
       }
 
-      const warnings = await writeSidecars(target, item)
+      // 开关由请求携带；未携带时保持旧行为（只处理客户端传入的 nfo/poster）。
+      const nfo = downloads && !enabled('NFO') ? undefined : item.nfo
+      const posterUrl = downloads && !enabled('封面') ? undefined : item.posterUrl
+      const trailerUrl = downloads && enabled('预告片') ? item.trailerUrl : undefined
+      const backgroundUnsupported =
+        !!downloads && enabled('背景图') && !backgroundWarned
+
+      const warnings = await writeSidecars(
+        target,
+        { ...item, nfo, posterUrl, posterCrop: posterUrl ? item.posterCrop : undefined },
+        { trailerUrl, backgroundUnsupported }
+      )
+      if (backgroundUnsupported) backgroundWarned = true
+      if (wantSubtitles) {
+        warnings.push(...subtitleWarnings)
+        warnings.push(...(await copySubtitles(dest, target, subtitleMatches, conflict)))
+      }
+
       results.push({
         source: item.source,
         target,

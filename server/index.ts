@@ -37,6 +37,7 @@ import {
   revealPath,
   trashFiles,
   type ConflictPolicy,
+  type DownloadOption,
   type OrganizeAction,
   type OrganizeItem,
   type OrganizeRequest
@@ -185,6 +186,18 @@ function optionalStringArray(value: unknown, label: string): string[] {
     throw new HttpError(400, `${label} 必须是字符串数组`)
   }
   return (value as string[]).map((item) => item.trim()).filter(Boolean)
+}
+
+function optionalDownloads(value: unknown): DownloadOption[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new HttpError(400, 'downloads 必须是数组')
+  return value.map((entry, index) => {
+    const option = ensureObject(entry, `downloads[${index}]`)
+    return {
+      label: requireString(option.label, `downloads[${index}].label`),
+      on: optionalBoolean(option.on, `downloads[${index}].on`, false)
+    }
+  })
 }
 
 function enumValue<T extends string>(
@@ -424,18 +437,28 @@ async function handleApi(req: Request, url: URL) {
       ) {
         throw new HttpError(400, `items[${index}].posterCrop 无效`)
       }
+      const trailerUrl =
+        typeof entry.trailerUrl === 'string' && entry.trailerUrl.trim()
+          ? entry.trailerUrl.trim()
+          : undefined
+      if (trailerUrl && !/^https?:\/\//i.test(trailerUrl)) {
+        throw new HttpError(400, `items[${index}].trailerUrl 必须是 http(s) 地址`)
+      }
+
       return {
         source: requireString(entry.source, `items[${index}].source`),
         relativeTarget: requireString(entry.relativeTarget, `items[${index}].relativeTarget`),
         nfo: typeof entry.nfo === 'string' ? entry.nfo : undefined,
         posterUrl: typeof entry.posterUrl === 'string' ? entry.posterUrl : undefined,
-        posterCrop
+        posterCrop,
+        trailerUrl
       }
     })
 
     const request: OrganizeRequest = {
       dest,
       items,
+      downloads: optionalDownloads(body.downloads),
       action: enumValue<OrganizeAction>(
         body.action,
         ['move', 'copy'],

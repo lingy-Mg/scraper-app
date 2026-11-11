@@ -1214,6 +1214,30 @@ export default function ScraperApp() {
 
     const wantNfo = mode.downloads.some((item) => item.on && item.label === 'NFO')
     const wantCover = mode.downloads.some((item) => item.on && item.label === '封面')
+    const wantTrailer = mode.downloads.some((item) => item.on && item.label === '预告片')
+
+    // 预告片只存 URL 并写进 NFO；NFO 关闭时无需拉取。
+    const trailerByUid = new Map<number, string>()
+    if (wantTrailer && wantNfo) {
+      await Promise.all(
+        done.map(async (row) => {
+          if (row.trailerUrl) {
+            trailerByUid.set(row.uid, row.trailerUrl)
+            return
+          }
+          if (!trailerKindOf(row) || !row.detailId) return
+          try {
+            const trailer = await fetchTrailer(row)
+            if (!trailer.trailerUrl) return
+            trailerByUid.set(row.uid, trailer.trailerUrl)
+            patchRow(row.uid, trailer)
+          } catch (error) {
+            pushLog('warn', `预告片获取失败：${row.file} · ${errText(error)}`)
+          }
+        })
+      )
+    }
+
     const items = done
       .map((row) => ({
         row,
@@ -1221,7 +1245,8 @@ export default function ScraperApp() {
         relativeTarget: withExt(buildPath(options.tpl, row)),
         nfo: wantNfo ? buildNfo(row, mode.name) : undefined,
         posterUrl: wantCover ? row.posterUrl : undefined,
-        posterCrop: wantCover ? row.posterCrop : undefined
+        posterCrop: wantCover ? row.posterCrop : undefined,
+        trailerUrl: wantTrailer ? row.trailerUrl || trailerByUid.get(row.uid) : undefined
       }))
       .filter((item) => Boolean(item.source))
 
@@ -1235,12 +1260,14 @@ export default function ScraperApp() {
       action: options.action,
       conflict: options.conflict,
       removeEmptyDirs: options.rmEmpty,
+      downloads: mode.downloads,
       items: items.map((item) => ({
         source: item.source,
         relativeTarget: item.relativeTarget,
         nfo: item.nfo,
         posterUrl: item.posterUrl,
-        posterCrop: item.posterCrop
+        posterCrop: item.posterCrop,
+        trailerUrl: item.trailerUrl
       }))
     }
 
