@@ -4,18 +4,32 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { watch } from 'node:fs'
-import { DATA_DIR } from './settings'
+import { resolveDataDir } from './settings'
 
 export const PLUGIN_ROOT = join(import.meta.dir, 'plugins')
-/** 用户插件目录（gitignore）；同 id 时覆盖内置插件。 */
-export const USER_PLUGIN_ROOT = join(DATA_DIR, 'plugins')
-const CONFIG_FILE = join(DATA_DIR, 'config.json')
-const CACHE_DIR = join(DATA_DIR, '.plugin-cache')
+
+/**
+ * 运行时路径按需解析，不在模块加载时固化：Bun 测试文件共享模块缓存，
+ * 但各自隔离 `process.env`。
+ */
+export function userPluginRoot(): string {
+  return join(resolveDataDir(), 'plugins')
+}
+
+function configFile(): string {
+  return join(resolveDataDir(), 'config.json')
+}
+
+function cacheDir(): string {
+  return join(resolveDataDir(), '.plugin-cache')
+}
+
+/** 插件在独立打包产物中通过环境变量定位数据目录。 */
+function syncPluginDataDir(): void {
+  process.env.SCRAPER_DATA_DIR = resolveDataDir()
+}
 
 export type PluginSource = 'builtin' | 'user'
-
-/** 插件打包后无法用相对路径定位运行时数据，统一由宿主注入绝对路径。 */
-process.env.SCRAPER_DATA_DIR = DATA_DIR
 
 export interface SourceOpt {
   label: string
@@ -96,7 +110,7 @@ export function setReloadListener(fn: (id: string) => void) {
 
 export async function loadOverrides() {
   try {
-    const raw = await readFile(CONFIG_FILE, 'utf8')
+    const raw = await readFile(configFile(), 'utf8')
     const parsed = JSON.parse(raw) as Record<string, Partial<PluginConfig>>
     for (const [id, value] of Object.entries(parsed)) overrides.set(id, value)
   } catch {
@@ -105,10 +119,10 @@ export async function loadOverrides() {
 }
 
 async function persistOverrides() {
-  await mkdir(DATA_DIR, { recursive: true })
+  await mkdir(resolveDataDir(), { recursive: true })
   const out: Record<string, Partial<PluginConfig>> = {}
   for (const [id, value] of overrides) out[id] = value
-  await writeFile(CONFIG_FILE, JSON.stringify(out, null, 2), 'utf8')
+  await writeFile(configFile(), JSON.stringify(out, null, 2), 'utf8')
 }
 
 function capabilitiesOf(manifest: PluginManifest): string[] {
@@ -138,7 +152,7 @@ async function pluginHash(): Promise<string> {
   const hash = createHash('sha1')
   for (const [label, root] of [
     ['builtin', PLUGIN_ROOT],
-    ['user', USER_PLUGIN_ROOT]
+    ['user', userPluginRoot()]
   ] as const) {
     if (!existsSync(root)) continue
     for (const rel of await collectFiles(root)) {
@@ -161,17 +175,18 @@ async function bundlePlugin(
 ): Promise<string> {
   const hash = await pluginHash()
   // 同名内置/用户插件必须使用不同缓存文件，否则会加载到错误的实现。
+  const outDir = cacheDir()
   const base = `${id}-${source}-${hash}`
-  const outfile = join(CACHE_DIR, `${base}.mjs`)
+  const outfile = join(outDir, `${base}.mjs`)
   if (existsSync(outfile)) {
     activeBundles.set(`${id}-${source}`, outfile)
     return outfile
   }
 
-  await mkdir(CACHE_DIR, { recursive: true })
+  await mkdir(outDir, { recursive: true })
   const result = await Bun.build({
     entrypoints: [entry],
-    outdir: CACHE_DIR,
+    outdir: outDir,
     target: 'bun',
     format: 'esm',
     naming: `${base}.mjs`,
@@ -199,7 +214,7 @@ async function bundlePlugin(
 async function prunePluginCache(): Promise<void> {
   let entries
   try {
-    entries = await readdir(CACHE_DIR, { withFileTypes: true })
+    entries = await readdir(cacheDir(), { withFileTypes: true })
   } catch {
     return
   }
@@ -209,7 +224,7 @@ async function prunePluginCache(): Promise<void> {
     if (!entry.isFile() || !entry.name.endsWith('.mjs')) continue
     const match = entry.name.match(/^(.*-(?:builtin|user))-[0-9a-f]{12}\.mjs$/)
     if (!match) continue
-    const path = join(CACHE_DIR, entry.name)
+    const path = join(cacheDir(), entry.name)
     let info
     try {
       info = await stat(path)
@@ -240,7 +255,7 @@ async function prunePluginCache(): Promise<void> {
 
 /** 用户目录优先；不存在时回退内置目录。 */
 function findPluginDir(id: string): { dir: string; source: PluginSource } | null {
-  const user = join(USER_PLUGIN_ROOT, id)
+  const user = join(userPluginRoot(), id)
   if (existsSync(join(user, 'plugin.json'))) return { dir: user, source: 'user' }
   const builtin = join(PLUGIN_ROOT, id)
   if (existsSync(join(builtin, 'plugin.json'))) return { dir: builtin, source: 'builtin' }
@@ -251,6 +266,8 @@ async function loadOne(
   id: string,
   location?: { dir: string; source: PluginSource }
 ): Promise<LoadedPlugin> {
+  // 插件打包产物通过环境变量读取数据目录，加载前同步为当前绝对路径。
+  syncPluginDataDir()
   const { dir, source } = location ?? findPluginDir(id) ?? {
     dir: join(PLUGIN_ROOT, id),
     source: 'builtin' as const
@@ -311,7 +328,7 @@ export async function loadAll() {
   // 先内置、后用户：同 id 由用户目录覆盖。
   for (const [root, source] of [
     [PLUGIN_ROOT, 'builtin'],
-    [USER_PLUGIN_ROOT, 'user']
+    [userPluginRoot(), 'user']
   ] as const) {
     if (!existsSync(root)) continue
     const entries = await readdir(root, { withFileTypes: true })
@@ -357,7 +374,7 @@ export async function reloadAll() {
 
 let watchTimer: ReturnType<typeof setTimeout> | null = null
 export function watchPlugins() {
-  for (const root of [PLUGIN_ROOT, USER_PLUGIN_ROOT]) {
+  for (const root of [PLUGIN_ROOT, userPluginRoot()]) {
     if (!existsSync(root)) continue
     watch(root, { recursive: true }, (_event, filename) => {
       if (!filename) return

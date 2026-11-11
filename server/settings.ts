@@ -69,6 +69,15 @@ export function resolveDataDir(): string {
 export const DATA_DIR = resolveDataDir()
 export const SETTINGS_FILE = join(DATA_DIR, 'settings.json')
 
+/**
+ * 运行时路径一律通过函数按需解析，而不是在模块加载时固化。
+ * Bun 测试文件共享模块缓存但各自隔离 `process.env`，延迟解析才能
+ * 让每个测试文件使用自己的临时目录。
+ */
+function settingsFile(): string {
+  return join(resolveDataDir(), 'settings.json')
+}
+
 export function defaultSettings(): Settings {
   return {
     ai: { ...DEFAULT_AI },
@@ -92,7 +101,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export async function loadSettings(): Promise<Settings> {
   try {
-    const raw = await readFile(SETTINGS_FILE, 'utf8')
+    const raw = await readFile(settingsFile(), 'utf8')
     const parsed: unknown = JSON.parse(raw)
     if (!isRecord(parsed)) return defaultSettings()
 
@@ -123,20 +132,21 @@ export async function loadModeConfig(id: string): Promise<Record<string, unknown
 
 /** 整体覆盖写入，临时文件 + rename，保证原子性。 */
 export async function saveSettings(settings: Settings): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true })
+  await mkdir(resolveDataDir(), { recursive: true })
+  const target = settingsFile()
   const payload = JSON.stringify(settings, null, 2)
-  const temp = `${SETTINGS_FILE}.${process.pid}.${Date.now()}.tmp`
+  const temp = `${target}.${process.pid}.${Date.now()}.tmp`
 
   await writeFile(temp, payload, 'utf8')
   try {
-    await rename(temp, SETTINGS_FILE)
+    await rename(temp, target)
   } catch {
     // Windows 上目标被占用时 rename 可能失败，退化为先删后改名。
     try {
-      await unlink(SETTINGS_FILE)
+      await unlink(target)
     } catch {
       // 目标不存在时忽略
     }
-    await rename(temp, SETTINGS_FILE)
+    await rename(temp, target)
   }
 }

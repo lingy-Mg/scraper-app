@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DATA_DIR, DEFAULT_AI, type AIConfig } from './settings'
+import { DEFAULT_AI, resolveDataDir, type AIConfig } from './settings'
 
 export interface Candidate {
   id: string
@@ -118,7 +118,10 @@ function isOpencode(config: AIConfig): boolean {
   return config.provider.trim().toLowerCase() === 'opencode cli'
 }
 
-const RUNNER_DIR = join(DATA_DIR, 'opencode-runner')
+/** 按当前数据目录解析 OpenCode 运行目录（不在模块加载时固化）。 */
+function runnerDir(): string {
+  return join(resolveDataDir(), 'opencode-runner')
+}
 
 const OPENCODE_AGENT = `---
 description: Return only the requested result
@@ -136,11 +139,12 @@ permissions:
 `
 
 function ensureOpencodeRunner(): void {
-  const agents = join(RUNNER_DIR, '.opencode', 'agents')
+  const dir = runnerDir()
+  const agents = join(dir, '.opencode', 'agents')
   mkdirSync(agents, { recursive: true })
   writeFileSync(join(agents, 'name-only.md'), OPENCODE_AGENT, 'utf8')
   writeFileSync(
-    join(RUNNER_DIR, 'opencode.json'),
+    join(dir, 'opencode.json'),
     JSON.stringify(
       {
         $schema: 'https://opencode.ai/config.json',
@@ -171,7 +175,8 @@ function cleanOpencodeOutput(value: string): string {
 
 async function opencodeCompletion(config: AIConfig, prompt: string): Promise<string> {
   ensureOpencodeRunner()
-  writeFileSync(join(RUNNER_DIR, 'prompt.txt'), prompt, 'utf8')
+  const dir = runnerDir()
+  writeFileSync(join(dir, 'prompt.txt'), prompt, 'utf8')
 
   const args = ['run', '--standalone', '--agent', 'name-only']
   const model = (config.model ?? '').trim()
@@ -182,13 +187,13 @@ async function opencodeCompletion(config: AIConfig, prompt: string): Promise<str
   const timeoutSeconds = Math.max(90, Number(config.timeout) || DEFAULT_AI.timeout)
   const debug = process.env.OPENCODE_DEBUG === '1'
   const trace = (message: string) => {
-    if (debug) appendFileSync(join(RUNNER_DIR, 'debug.log'), `${new Date().toISOString()} ${message}\n`)
+    if (debug) appendFileSync(join(dir, 'debug.log'), `${new Date().toISOString()} ${message}\n`)
   }
   trace(`spawn args=${args.join(' ')}`)
 
   return await new Promise<string>((resolve, reject) => {
     const child = spawn('opencode', args, {
-      cwd: RUNNER_DIR,
+      cwd: dir,
       windowsHide: true,
       shell: process.platform === 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],

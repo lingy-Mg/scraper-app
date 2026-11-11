@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { DATA_DIR } from './settings'
+import { DATA_DIR, resolveDataDir } from './settings'
 
 /** 媒体库条目，字段与 docs/providers-library-contract.md 一致。 */
 export interface LibraryItem {
@@ -30,6 +30,11 @@ export interface LibraryItem {
 }
 
 export const DB_FILE = join(DATA_DIR, 'library.db')
+
+/** 按当前数据目录解析数据库路径（不在模块加载时固化）。 */
+function databaseFile(): string {
+  return join(resolveDataDir(), 'library.db')
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS items (
@@ -118,16 +123,23 @@ type ItemRow = {
 }
 
 let db: Database | null = null
+let dbPath = ''
 
 /**
  * 惰性打开数据库：模块加载时不做任何 IO，首次调用时才创建目录、表并设置 PRAGMA。
  * 初始化失败不会缓存损坏的句柄，下次调用会重试。
+ * 数据目录切换（测试注入）时自动重开，避免复用到旧路径的句柄。
  */
 function getDb(): Database {
-  if (db) return db
+  const target = databaseFile()
+  if (db && dbPath === target) return db
+  if (db) {
+    db.close()
+    db = null
+  }
 
-  mkdirSync(DATA_DIR, { recursive: true })
-  const conn = new Database(DB_FILE, { create: true })
+  mkdirSync(resolveDataDir(), { recursive: true })
+  const conn = new Database(target, { create: true })
   conn.exec('PRAGMA journal_mode = WAL;')
   conn.exec('PRAGMA busy_timeout = 5000;')
   conn.exec(SCHEMA)
@@ -146,6 +158,7 @@ function getDb(): Database {
   }
 
   db = conn
+  dbPath = target
   return db
 }
 
@@ -235,6 +248,7 @@ export function closeLibrary(): void {
   if (!db) return
   db.close()
   db = null
+  dbPath = ''
 }
 
 /** 读取全部条目，按更新时间倒序。 */

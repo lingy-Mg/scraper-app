@@ -45,8 +45,17 @@ function defaultDataDir(): string {
   return join(import.meta.dir, '..', '..', '..', 'data')
 }
 
-const DATA_DIR = resolve(process.env.SCRAPER_DATA_DIR?.trim() || defaultDataDir())
-const UUID_FILE = join(DATA_DIR, 'javdb-device.txt')
+/**
+ * 按需解析：宿主在加载插件前注入 `SCRAPER_DATA_DIR`，测试也据此隔离。
+ * 不在模块加载时固化，避免 Bun 测试文件共享模块缓存时读到别的临时目录。
+ */
+function dataDir(): string {
+  return resolve(process.env.SCRAPER_DATA_DIR?.trim() || defaultDataDir())
+}
+
+function uuidFile(): string {
+  return join(dataDir(), 'javdb-device.txt')
+}
 
 export interface JavdbMovie {
   id: string
@@ -106,7 +115,7 @@ function signature(ts = Math.floor(Date.now() / 1000)): string {
 async function deviceUUID(): Promise<string> {
   if (uuidCache) return uuidCache
   try {
-    const value = (await readFile(UUID_FILE, 'utf8')).trim()
+    const value = (await readFile(uuidFile(), 'utf8')).trim()
     if (value) {
       uuidCache = value
       return value
@@ -116,8 +125,8 @@ async function deviceUUID(): Promise<string> {
   }
   uuidCache = crypto.randomUUID()
   try {
-    await mkdir(DATA_DIR, { recursive: true })
-    await writeFile(UUID_FILE, uuidCache, 'utf8')
+    await mkdir(dataDir(), { recursive: true })
+    await writeFile(uuidFile(), uuidCache, 'utf8')
   } catch {
     // 只读环境下退化为进程内 UUID
   }

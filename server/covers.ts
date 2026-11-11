@@ -2,9 +2,12 @@ import { createHash } from 'node:crypto'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { cropImage, decodeCover, type ImageFormat } from './image'
-import { DATA_DIR } from './settings'
+import { resolveDataDir } from './settings'
 
-const COVER_DIR = join(DATA_DIR, 'covers')
+/** 按当前数据目录解析封面缓存位置（不在模块加载时固化）。 */
+function coverDir(): string {
+  return join(resolveDataDir(), 'covers')
+}
 const EXTENSIONS = ['jpg', 'png', 'gif', 'webp', 'avif', 'heic'] as const
 const MIME: Record<ImageFormat['ext'], string> = {
   jpg: 'image/jpeg',
@@ -28,8 +31,9 @@ export interface CachedCover {
 }
 
 async function findCached(prefix: string): Promise<CachedCover | null> {
+  const dir = coverDir()
   for (const ext of EXTENSIONS) {
-    const path = join(COVER_DIR, `${prefix}.${ext}`)
+    const path = join(dir, `${prefix}.${ext}`)
     try {
       const info = await stat(path)
       if (info.size > 100) return { path, type: MIME[ext] }
@@ -67,8 +71,9 @@ export async function cacheCover(rawUrl: string, crop?: CropRect): Promise<Cache
     ? cropImage(raw, crop.x, crop.y, crop.width, crop.height)
     : decodeCover(raw)
 
-  await mkdir(COVER_DIR, { recursive: true })
-  const path = join(COVER_DIR, `${prefix}.${decoded.format.ext}`)
+  const dir = coverDir()
+  await mkdir(dir, { recursive: true })
+  const path = join(dir, `${prefix}.${decoded.format.ext}`)
   await writeFile(path, decoded.data)
   return { path, type: decoded.format.mime }
 }

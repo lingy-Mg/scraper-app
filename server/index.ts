@@ -1,7 +1,7 @@
 import { join, normalize, resolve, sep } from 'node:path'
 import {
   PLUGIN_ROOT,
-  USER_PLUGIN_ROOT,
+  userPluginRoot,
   getPlugin,
   getPlugins,
   loadAll,
@@ -596,7 +596,7 @@ async function servePluginAsset(url: URL) {
 
   // 用户插件目录优先，随后内置目录。
   let forbidden = false
-  for (const root of [USER_PLUGIN_ROOT, PLUGIN_ROOT]) {
+  for (const root of [userPluginRoot(), PLUGIN_ROOT]) {
     const full = normalize(join(root, rel))
     if (full !== root && !full.startsWith(root + sep)) {
       forbidden = true
