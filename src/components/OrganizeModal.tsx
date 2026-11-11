@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { App as AntdApp, Button, Checkbox, Input, Modal, Select } from 'antd'
 import type { InputRef } from 'antd'
-import type { ModeConfig, OrganizeOptions, Row } from '../types'
+import type { ModeConfig, OrganizeOptions, OrganizeSummary, Row } from '../types'
+import type { TaskQueueProgress } from '../taskQueue'
 import { buildPath, errText, fmtSize, withExt } from '../utils'
 import { native } from '../native'
 
@@ -16,11 +17,29 @@ interface Props {
   open: boolean
   config: ModeConfig
   rows: Row[]
+  /** 整理任务队列进度；仅运行时展示。 */
+  progress?: TaskQueueProgress | null
+  /** 上一轮整理结果汇总（含失败与未开始/取消计数）。 */
+  summary?: OrganizeSummary | null
   onCancel: () => void
   onRun: (options: OrganizeOptions) => void | Promise<void>
+  onPause?: () => void
+  onResume?: () => void
+  onCancelRun?: () => void
 }
 
-export default function OrganizeModal({ open, config, rows, onCancel, onRun }: Props) {
+export default function OrganizeModal({
+  open,
+  config,
+  rows,
+  progress,
+  summary,
+  onCancel,
+  onRun,
+  onPause,
+  onResume,
+  onCancelRun
+}: Props) {
   const { message } = AntdApp.useApp()
   const [dest, setDest] = useState('')
   const [tpl, setTpl] = useState(config.organize)
@@ -69,7 +88,7 @@ export default function OrganizeModal({ open, config, rows, onCancel, onRun }: P
   }
 
   const submit = async () => {
-    if (!dest.trim() || running) return
+    if (!dest.trim() || running || summary) return
     setRunning(true)
     try {
       await onRun({ dest: dest.trim(), tpl, action, conflict, rmEmpty })
@@ -84,16 +103,32 @@ export default function OrganizeModal({ open, config, rows, onCancel, onRun }: P
       onCancel={onCancel}
       title="整理文件"
       width={680}
+      closable={!running}
+      maskClosable={!running}
       footer={
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            将整理 <b>{done.length}</b> 个文件 · <b>{fmtSize(total)}</b>
+            {summary ? (
+              <>
+                整理结果：成功 <b>{summary.ok}</b> · 跳过 <b>{summary.skipped}</b> · 失败{' '}
+                <b style={{ color: summary.failed ? 'var(--red)' : undefined }}>
+                  {summary.failed}
+                </b>{' '}
+                · 取消 <b>{summary.cancelled}</b>
+              </>
+            ) : (
+              <>
+                将整理 <b>{done.length}</b> 个文件 · <b>{fmtSize(total)}</b>
+              </>
+            )}
           </span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <Button onClick={onCancel}>取消</Button>
+            <Button onClick={onCancel} disabled={running}>
+              {summary ? '关闭' : '取消'}
+            </Button>
             <Button
               type="primary"
-              disabled={!dest.trim()}
+              disabled={!dest.trim() || Boolean(summary)}
               loading={running}
               onClick={() => void submit()}
             >
@@ -196,6 +231,42 @@ export default function OrganizeModal({ open, config, rows, onCancel, onRun }: P
             ))}
           </div>
         </div>
+
+        {running && progress && (
+          <div className="organize-progress">
+            <span>
+              已完成 <b>{progress.done}</b> / {progress.total}
+              {progress.failed ? (
+                <span style={{ color: 'var(--red)' }}>（失败 {progress.failed}）</span>
+              ) : null}
+            </span>
+            <span>执行中 {progress.running}</span>
+            <span style={{ color: 'var(--muted-2)' }}>
+              {progress.state === 'paused' ? '已暂停，等待继续' : '逐条提交中…'}
+            </span>
+            <span className="grow" />
+            {progress.state === 'paused' ? (
+              <Button size="small" type="primary" onClick={onResume}>
+                继续
+              </Button>
+            ) : (
+              <Button size="small" onClick={onPause}>
+                暂停
+              </Button>
+            )}
+            <Button size="small" danger onClick={onCancelRun}>
+              取消
+            </Button>
+          </div>
+        )}
+
+        {!running && summary && (
+          <div className="organize-summary">
+            成功 <b>{summary.ok}</b> · 跳过 <b>{summary.skipped}</b> · 失败{' '}
+            <b className={summary.failed ? 'bad' : undefined}>{summary.failed}</b> · 取消{' '}
+            <b className={summary.cancelled ? 'warn' : undefined}>{summary.cancelled}</b>
+          </div>
+        )}
       </div>
     </Modal>
   )

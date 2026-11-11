@@ -323,6 +323,15 @@ export interface OrganizeOptions {
   rmEmpty: boolean
 }
 
+/** 整理任务结束后的结果汇总（含取消未执行项）。 */
+export interface OrganizeSummary {
+  ok: number
+  skipped: number
+  failed: number
+  cancelled: number
+  total: number
+}
+
 export interface ModeConfig {
   key: ModeKey
   name: string

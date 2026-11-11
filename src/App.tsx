@@ -51,7 +51,7 @@ import type {
   ModeKey,
   NativeMode,
   OrganizeOptions,
-  OrganizeRequest,
+  OrganizeSummary,
   Row,
   RowStatus,
   ScanProgress,
@@ -264,6 +264,7 @@ export default function ScraperApp() {
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [task, setTask] = useState('空闲')
   const [queueView, setQueueView] = useState<QueueView | null>(null)
+  const [organizeSummary, setOrganizeSummary] = useState<OrganizeSummary | null>(null)
   const [hydrated, setHydrated] = useState(false)
   const [scan, setScan] = useState<ScanState>({
     active: false,
@@ -1354,6 +1355,10 @@ export default function ScraperApp() {
   }
 
   const runOrganize = async (options: OrganizeOptions) => {
+    if (task !== '空闲' || queueRef.current) {
+      message.info('当前有任务进行中')
+      return
+    }
     const done = allowedRows.filter((row) => row.status === 'done')
     if (!done.length) {
       message.info('没有可整理的文件')
@@ -1368,6 +1373,7 @@ export default function ScraperApp() {
       ...prev,
       [modeKey]: { ...prev[modeKey], organize: options.tpl }
     }))
+    setOrganizeSummary(null)
 
     const wantNfo = mode.downloads.some((item) => item.on && item.label === 'NFO')
     const wantCover = mode.downloads.some((item) => item.on && item.label === '封面')
@@ -1412,55 +1418,79 @@ export default function ScraperApp() {
       return
     }
 
-    const request: OrganizeRequest = {
-      dest: options.dest,
-      action: options.action,
-      conflict: options.conflict,
-      removeEmptyDirs: options.rmEmpty,
-      downloads: mode.downloads,
-      items: items.map((item) => ({
-        source: item.source,
-        relativeTarget: item.relativeTarget,
-        nfo: item.nfo,
-        posterUrl: item.posterUrl,
-        posterCrop: item.posterCrop,
-        trailerUrl: item.trailerUrl
-      }))
-    }
+    const moved = new Map<string, string>()
+    let ok = 0
+    let skipped = 0
+    let failed = 0
 
-    setTask('整理中…')
     setNote(`正在整理 ${items.length} 个文件…`)
-    pushLog('info', `整理 ${items.length} 个文件 → ${options.dest}`)
+    pushLog('info', `整理 ${items.length} 个文件 → ${options.dest}（逐条提交）`)
 
-    try {
-      const results = await native.organize(request)
-      const bySource = new Map(items.map((item) => [item.source, item.row]))
-      const moved = new Map<string, string>()
-      let ok = 0
-      let skipped = 0
-      let failed = 0
-
-      for (const result of results) {
-        const row = bySource.get(result.source)
-        const name = row?.file || baseName(result.source)
-        if (result.ok && result.skipped) {
-          skipped += 1
-          pushLog('info', `已存在，跳过：${name}`)
-        } else if (result.ok) {
-          ok += 1
-          moved.set(result.source, result.target)
-          pushLog('ok', `${name} → ${result.target}`)
-          if (result.warning) pushLog('warn', `${name} 附属文件：${result.warning}`)
-        } else {
+    // 逐条提交：每条独立请求，便于暂停/取消时只影响未开始的条目。
+    const queue = new TaskQueue(
+      items,
+      async (item, signal) => {
+        const results = await native.organize(
+          {
+            dest: options.dest,
+            action: options.action,
+            conflict: options.conflict,
+            removeEmptyDirs: options.rmEmpty,
+            downloads: mode.downloads,
+            items: [
+              {
+                source: item.source,
+                relativeTarget: item.relativeTarget,
+                nfo: item.nfo,
+                posterUrl: item.posterUrl,
+                posterCrop: item.posterCrop,
+                trailerUrl: item.trailerUrl
+              }
+            ]
+          },
+          signal
+        )
+        const result = results[0]
+        if (!result) throw new Error('整理接口没有返回结果')
+        return result
+      },
+      {
+        concurrency: 2,
+        isFailure: (result) => !result.ok,
+        onProgress: (progress) => {
+          setQueueView({ kind: 'organize', label: '整理', progress })
+          setTask(formatQueueTask('整理', progress))
+        },
+        onTaskDone: (item, result) => {
+          const name = item.row.file || baseName(item.source)
+          if (result.ok && result.skipped) {
+            skipped += 1
+            pushLog('info', `已存在，跳过：${name}`)
+          } else if (result.ok) {
+            ok += 1
+            moved.set(result.source, result.target)
+            pushLog('ok', `${name} → ${result.target}`)
+            if (result.warning) pushLog('warn', `${name} 附属文件：${result.warning}`)
+          } else {
+            failed += 1
+            pushLog('warn', `整理失败 ${name}：${result.error || '未知错误'}`)
+          }
+        },
+        onTaskError: (item, error) => {
+          if (isAbortError(error)) return
           failed += 1
-          pushLog('warn', `整理失败 ${name}：${result.error || '未知错误'}`)
+          const name = item.row.file || baseName(item.source)
+          pushLog('warn', `整理失败 ${name}：${errText(error)}`)
         }
       }
+    )
 
-      if (results.length < items.length) {
-        pushLog('warn', `${items.length - results.length} 项没有返回整理结果`)
-      }
+    queueRef.current = queue
+    try {
+      const final = await queue.start()
+      const cancelled = Math.max(0, final.total - final.done - final.failed)
 
+      // 已完成的移动结果照常写回行；取消不回滚已完成的条目。
       if (moved.size && options.action === 'move') {
         setRows((prev) =>
           prev.map((row) => {
@@ -1470,20 +1500,42 @@ export default function ScraperApp() {
         )
       }
 
-      setNote(`整理完成：成功 ${ok} · 跳过 ${skipped} · 失败 ${failed}`)
-      if (failed) {
+      const summary: OrganizeSummary = {
+        ok,
+        skipped,
+        failed,
+        cancelled,
+        total: final.total
+      }
+      setOrganizeSummary(summary)
+
+      if (final.state === 'cancelled') {
+        setNote(
+          `整理已取消：成功 ${ok} · 跳过 ${skipped} · 失败 ${failed} · 未开始 ${cancelled}`
+        )
+        pushLog('warn', `整理已取消：成功 ${ok} · 跳过 ${skipped} · 失败 ${failed} · 未开始 ${cancelled}`)
+        message.warning(`整理已取消（已完成 ${ok + skipped} 项，未开始 ${cancelled} 项）`)
+      } else if (failed) {
+        setNote(`整理完成：成功 ${ok} · 跳过 ${skipped} · 失败 ${failed}`)
         message.warning(`整理完成，${failed} 项失败（详见日志）`)
       } else {
+        setNote(`整理完成：成功 ${ok} · 跳过 ${skipped} · 失败 0`)
         message.success(`已整理 ${ok} 个文件，跳过 ${skipped} 个`)
-        setOrganizeOpen(false)
       }
     } catch (error) {
       pushLog('warn', `整理失败：${errText(error)}`)
       setNote('整理失败')
       message.error(`整理失败：${errText(error)}`)
     } finally {
+      queueRef.current = null
       setTask('空闲')
     }
+  }
+
+  /** 打开整理弹窗时清空上一轮汇总，避免与本次运行混淆。 */
+  const openOrganize = () => {
+    setOrganizeSummary(null)
+    setOrganizeOpen(true)
   }
 
   const saveConfig = (config: ModeConfig) => {
@@ -1999,7 +2051,7 @@ export default function ScraperApp() {
         cleanShorts()
         break
       case 'organize':
-        setOrganizeOpen(true)
+        openOrganize()
         break
       case 'config':
         setConfigOpen(true)
@@ -2088,7 +2140,8 @@ export default function ScraperApp() {
         setPosterRow(null)
         setReviewRow(null)
         setManualRow(null)
-        setOrganizeOpen(false)
+        // 整理队列运行时不关闭弹窗，避免丢失暂停/取消入口。
+        if (!(queueRef.current && queueView?.kind === 'organize')) setOrganizeOpen(false)
         setConfigOpen(false)
         setAiOpen(false)
         setBlacklistOpen(false)
@@ -2105,7 +2158,7 @@ export default function ScraperApp() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'm') {
         e.preventDefault()
-        if (folder) setOrganizeOpen(true)
+        if (folder) openOrganize()
       }
       if (e.key === 'Delete') deleteSelected()
       if (e.key === 'F5') {
@@ -2138,7 +2191,7 @@ export default function ScraperApp() {
         path={folder}
         busy={task !== '空闲'}
         onPick={() => void pickFolder()}
-        onOrganize={() => setOrganizeOpen(true)}
+        onOrganize={openOrganize}
         onStart={() => void startScrape()}
         onAI={() => setAiOpen(true)}
       />
@@ -2231,8 +2284,13 @@ export default function ScraperApp() {
         open={organizeOpen}
         config={mode}
         rows={allowedRows}
+        progress={queueView?.kind === 'organize' ? queueView.progress : null}
+        summary={organizeSummary}
         onCancel={() => setOrganizeOpen(false)}
         onRun={runOrganize}
+        onPause={() => queueRef.current?.pause()}
+        onResume={() => queueRef.current?.resume()}
+        onCancelRun={() => queueRef.current?.cancel()}
       />
       <ConfigModal
         open={configOpen}
