@@ -48,9 +48,9 @@ export default function PluginSettingsModal({ open, mode, onClose, onSaved }: Pr
           style={{
             width: '100%',
             height: 520,
-            border: '1px solid #e2e5e9',
+            border: '1px solid var(--line)',
             borderRadius: 4,
-            background: '#fff'
+            background: 'var(--bg-elevated)'
           }}
           sandbox="allow-scripts allow-forms allow-same-origin"
         />

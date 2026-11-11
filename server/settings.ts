@@ -18,6 +18,11 @@ export interface AIConfig {
   prompt: string
 }
 
+/** 主题偏好；旧设置缺少该字段时按 `system` 处理。 */
+export type ThemePreference = 'light' | 'dark' | 'system'
+
+const THEMES: readonly ThemePreference[] = ['light', 'dark', 'system']
+
 /** 媒体库来源（扫描根目录）；只记录路径，不移动/删除任何文件。 */
 export interface MediaSource {
   path: string
@@ -40,6 +45,8 @@ export interface Settings {
   logOpen?: boolean
   /** 日志面板高度（像素）。 */
   logHeight?: number
+  /** 界面主题；非法值回退为 `system`。 */
+  theme?: ThemePreference
   /** 文件名黑名单：扫描时跳过、列表中隐藏。 */
   blacklist?: string[]
 }
@@ -98,12 +105,20 @@ export function defaultSettings(): Settings {
     hideShorts: true,
     logOpen: true,
     logHeight: 180,
+    theme: 'system',
     blacklist: []
   }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** 兼容旧设置：缺失/损坏的主题一律回退为 system。 */
+export function normalizeTheme(value: unknown): ThemePreference {
+  return typeof value === 'string' && THEMES.includes(value as ThemePreference)
+    ? (value as ThemePreference)
+    : 'system'
 }
 
 /** 兼容旧设置：缺失/损坏的 sources 一律回退为空数组，并去重。 */
@@ -140,6 +155,7 @@ export async function loadSettings(): Promise<Settings> {
     return {
       ...defaults,
       ...parsed,
+      theme: normalizeTheme(parsed.theme),
       sources: normalizeSources(parsed.sources, defaults.sources ?? []),
       ai: {
         ...defaults.ai,

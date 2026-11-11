@@ -1,5 +1,8 @@
 export type ModeKey = 'av' | 'movie' | 'tv' | 'anime'
 
+/** 主题偏好：跟随系统时由浏览器 `prefers-color-scheme` 决定实际主题。 */
+export type ThemePreference = 'light' | 'dark' | 'system'
+
 export type RowStatus = 'done' | 'unmatched' | 'running' | 'waiting' | 'error' | 'review'
 
 export type NativeMode = 'http'
@@ -152,6 +155,8 @@ export interface Settings {
   logOpen?: boolean
   /** 日志面板高度（像素）。 */
   logHeight?: number
+  /** 界面主题；旧设置缺少该字段时按 `system` 处理。 */
+  theme?: ThemePreference
   /**
    * 文件名黑名单：不区分大小写，支持 `*` / `?` 通配符；
    * 不含通配符时按包含匹配。命中的文件扫描时跳过、列表中隐藏。

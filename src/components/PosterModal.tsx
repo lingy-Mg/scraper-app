@@ -21,7 +21,7 @@ function Meta({ label, value }: { label: string; value?: string }) {
   if (!value) return null
   return (
     <div style={{ display: 'flex', gap: 8, fontSize: 11.5, lineHeight: '18px' }}>
-      <span style={{ color: '#8a929c', flex: 'none', width: 40 }}>{label}</span>
+      <span style={{ color: 'var(--muted)', flex: 'none', width: 40 }}>{label}</span>
       <span style={{ minWidth: 0, wordBreak: 'break-word' }}>{value}</span>
     </div>
   )
@@ -65,19 +65,19 @@ export default function PosterModal({ row, onClose, onCrop, onReset }: Props) {
             </div>
           )}
           {row.posterUrl && (
-            <div style={{ fontSize: 11, color: '#636b76', marginTop: 6 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
               {row.posterCrop
                 ? `已手动裁剪 · ${row.posterCrop.width}×${row.posterCrop.height}`
                 : '完整封面 · 需要时再手动裁剪'}
             </div>
           )}
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#636b76' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
               {row.code || '未识别'}
             </div>
             <div style={{ fontSize: 13, marginTop: 2, fontWeight: 500 }}>{row.title}</div>
             {row.overview && (
-              <div style={{ fontSize: 11, color: '#5a626c', marginTop: 6 }}>{row.overview}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>{row.overview}</div>
             )}
             <div style={{ marginTop: 10, display: 'grid', gap: 4 }}>
               <Meta label="片商" value={row.maker} />
@@ -120,16 +120,16 @@ export default function PosterModal({ row, onClose, onCrop, onReset }: Props) {
               </div>
             )}
 
-            <div style={{ marginTop: 12, borderTop: '1px solid #262c34', paddingTop: 8 }}>
-              <div style={{ fontSize: 11.5, color: '#8a929c', marginBottom: 4 }}>字幕</div>
+            <div style={{ marginTop: 12, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>字幕</div>
               {row.subtitlesLoading || row.subtitles === undefined ? (
-                <div style={{ fontSize: 11.5, color: '#636b76' }}>正在匹配字幕…</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>正在匹配字幕…</div>
               ) : row.subtitlesError ? (
-                <div style={{ fontSize: 11.5, color: '#c98a6b' }}>
+                <div style={{ fontSize: 11.5, color: 'var(--amber)' }}>
                   字幕匹配失败：{row.subtitlesError}
                 </div>
               ) : row.subtitles.length === 0 ? (
-                <div style={{ fontSize: 11.5, color: '#636b76' }}>未找到字幕</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>未找到字幕</div>
               ) : (
                 <div style={{ display: 'grid', gap: 3 }}>
                   {row.subtitles.map((subtitle) => (
@@ -153,7 +153,7 @@ export default function PosterModal({ row, onClose, onCrop, onReset }: Props) {
                           {subtitle.language}
                         </span>
                       )}
-                      <span style={{ flex: 'none', color: '#636b76' }}>
+                      <span style={{ flex: 'none', color: 'var(--muted)' }}>
                         {subtitle.format.toUpperCase()}
                       </span>
                     </div>

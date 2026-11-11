@@ -29,6 +29,7 @@ import {
   toModeConfig
 } from './api'
 import { native, registerFolderPicker } from './native'
+import { useThemePreference } from './ThemeRoot'
 import type {
   AIConfig,
   AIIdentifyResult,
@@ -169,6 +170,11 @@ const mergeModeConfig = (base: ModeConfig, saved?: ModeConfig): ModeConfig =>
 
 export default function ScraperApp() {
   const { message, modal } = AntdApp.useApp()
+  const {
+    preference: themePreference,
+    resolved: resolvedTheme,
+    setPreference: setThemePreference
+  } = useThemePreference()
 
   const [modes, setModes] = useState<Record<string, ModeConfig>>(INITIAL_MODES)
   const [modeKey, setModeKey] = useState<ModeKey>('av')
@@ -551,6 +557,7 @@ export default function ScraperApp() {
         setHideShorts(settings.hideShorts ?? true)
         setLogOpen(settings.logOpen ?? true)
         setLogHeight(settings.logHeight ?? 180)
+        setThemePreference(settings.theme ?? 'system')
         const savedBlacklist = normalizeBlacklist(settings.blacklist ?? [])
         blacklistRef.current = savedBlacklist
         setBlacklist(savedBlacklist)
@@ -662,6 +669,7 @@ export default function ScraperApp() {
         hideShorts,
         logOpen,
         logHeight,
+        theme: themePreference,
         blacklist
       }
       native
@@ -669,7 +677,20 @@ export default function ScraperApp() {
         .catch((error) => pushLog('warn', `保存设置失败：${errText(error)}`))
     }, 500)
     return () => window.clearTimeout(timer)
-  }, [ai, modes, folder, minDur, compact, hideShorts, logOpen, logHeight, blacklist, hydrated, nativeMode])
+  }, [
+    ai,
+    modes,
+    folder,
+    minDur,
+    compact,
+    hideShorts,
+    logOpen,
+    logHeight,
+    themePreference,
+    blacklist,
+    hydrated,
+    nativeMode
+  ])
 
   // 媒体库持久化（800ms 防抖）；扫描与重置期间不落库。
   useEffect(() => {
@@ -1792,6 +1813,22 @@ export default function ScraperApp() {
       case 'compact':
         setCompact((value) => !value)
         break
+      case 'theme-light':
+      case 'theme-dark':
+      case 'theme-system': {
+        const next = key.slice('theme-'.length) as 'light' | 'dark' | 'system'
+        setThemePreference(next)
+        pushLog(
+          'info',
+          next === 'system'
+            ? '主题已切换为跟随系统'
+            : `主题已切换为${next === 'dark' ? '深色' : '浅色'}`
+        )
+        message.success(
+          next === 'system' ? '主题：跟随系统' : `主题：${next === 'dark' ? '深色' : '浅色'}`
+        )
+        break
+      }
       case 'quit':
         message.info('当前运行在浏览器中，请直接关闭标签页')
         break
@@ -1852,7 +1889,11 @@ export default function ScraperApp() {
   return (
     <div className="app">
       <TitleBar subtitle={folder ? baseName(folder) : '未选择目录'} />
-      <MenuBar onAction={handleMenu} />
+      <MenuBar
+        onAction={handleMenu}
+        themePreference={themePreference}
+        resolvedTheme={resolvedTheme}
+      />
       <Toolbar
         path={folder}
         busy={task !== '空闲'}

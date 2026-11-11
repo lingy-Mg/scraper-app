@@ -52,7 +52,7 @@ export default function ConfigModal({ open, config, onCancel, onSave }: Props) {
       width={560}
       footer={
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#636b76' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             仅对「{config.name}」模式生效
           </span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>

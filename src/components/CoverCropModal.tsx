@@ -191,7 +191,7 @@ export default function CoverCropModal({ row, onCancel, onApply }: Props) {
       onCancel={saving ? undefined : onCancel}
       footer={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: '#636b76' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {rect.width > 0
               ? `裁剪区域 ${rect.width} × ${rect.height}`
               : '正在加载封面…'}
@@ -263,7 +263,7 @@ export default function CoverCropModal({ row, onCancel, onApply }: Props) {
           </div>
         </>
       ) : (
-        <div style={{ padding: 24, color: '#8a929c' }}>没有可用的封面地址</div>
+        <div style={{ padding: 24, color: 'var(--muted-2)' }}>没有可用的封面地址</div>
       )}
     </Modal>
   )

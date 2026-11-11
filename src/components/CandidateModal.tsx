@@ -107,7 +107,7 @@ export default function CandidateModal({ row, config, onCancel, onConfirm }: Pro
       title="选择匹配结果"
       footer={
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#636b76' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {current ? `已选：${current.title} (${current.year})` : '请选择一条结果'}
           </span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>

@@ -10,13 +10,14 @@ const POSTER_BG = [
   'linear-gradient(150deg,#3f5a55,#1e2b28)'
 ]
 
+/** 状态颜色走 CSS 变量，浅色 / 深色主题各自提供可读色值。 */
 const STATUS: Record<RowStatus, { label: string; color: string }> = {
-  done: { label: '已完成', color: '#188a4c' },
-  unmatched: { label: '无法刮削', color: '#b45309' },
-  running: { label: '刮削中', color: '#1f6feb' },
-  waiting: { label: '等待', color: '#6b7280' },
-  error: { label: '失败', color: '#c0392b' },
-  review: { label: '待选择', color: '#7c3aed' }
+  done: { label: '已完成', color: 'var(--green)' },
+  unmatched: { label: '无法刮削', color: 'var(--amber)' },
+  running: { label: '刮削中', color: 'var(--blue)' },
+  waiting: { label: '等待', color: 'var(--muted)' },
+  error: { label: '失败', color: 'var(--red)' },
+  review: { label: '待选择', color: 'var(--purple)' }
 }
 
 interface Props {
@@ -126,8 +127,8 @@ export default function FileTable({
               style={{
                 marginLeft: 5,
                 color: 'var(--amber)',
-                background: '#fdf6ec',
-                border: '1px solid #f0dcc0'
+                background: 'var(--amber-bg)',
+                border: '1px solid var(--amber-border)'
               }}
             >
               短片

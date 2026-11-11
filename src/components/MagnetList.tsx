@@ -41,7 +41,7 @@ export default function MagnetList({ magnets = [], loading, error }: Props) {
   }
 
   if (loading) {
-    return <div style={{ fontSize: 11, color: '#8a929c', marginTop: 12 }}>磁力加载中…</div>
+    return <div style={{ fontSize: 11, color: 'var(--muted-2)', marginTop: 12 }}>磁力加载中…</div>
   }
 
   if (error) {
@@ -53,11 +53,11 @@ export default function MagnetList({ magnets = [], loading, error }: Props) {
   }
 
   if (!magnets.length) {
-    return <div style={{ fontSize: 11, color: '#8a929c', marginTop: 12 }}>暂无磁力数据</div>
+    return <div style={{ fontSize: 11, color: 'var(--muted-2)', marginTop: 12 }}>暂无磁力数据</div>
   }
 
   return (
-    <div style={{ marginTop: 14, borderTop: '1px solid #eef0f2', paddingTop: 10 }}>
+    <div style={{ marginTop: 14, borderTop: '1px solid var(--line-2)', paddingTop: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ fontSize: 12, fontWeight: 500 }}>磁力（{magnets.length}）</span>
         <Button
@@ -74,10 +74,10 @@ export default function MagnetList({ magnets = [], loading, error }: Props) {
           <div
             key={`${magnet.hash}-${index}`}
             style={{
-              border: '1px solid #eef0f2',
+              border: '1px solid var(--line-2)',
               borderRadius: 4,
               padding: '6px 8px',
-              background: '#fafbfc'
+              background: 'var(--bg-subtle)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
@@ -112,7 +112,7 @@ export default function MagnetList({ magnets = [], loading, error }: Props) {
                 alignItems: 'center',
                 gap: 6,
                 fontSize: 10.5,
-                color: '#636b76',
+                color: 'var(--muted)',
                 marginTop: 3
               }}
             >
@@ -134,7 +134,7 @@ export default function MagnetList({ magnets = [], loading, error }: Props) {
         onCancel={() => setFallback(null)}
         footer={<Button onClick={() => setFallback(null)}>关闭</Button>}
       >
-        <p style={{ fontSize: 11.5, color: '#636b76', marginTop: 0 }}>
+        <p style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 0 }}>
           无法自动写入剪贴板（需要 HTTPS 或剪贴板权限），请全选下方文本手动复制：
         </p>
         <Input.TextArea

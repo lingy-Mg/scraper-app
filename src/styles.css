@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --chrome: #f3f4f6;
   --chrome-2: #eceef1;
   --line: #e2e5e9;
@@ -7,11 +8,80 @@
   --muted: #636b76;
   --muted-2: #9aa1ab;
   --blue: #1f6feb;
+  --blue-text: #1a5fd0;
   --blue-bg: #eef4ff;
+  --blue-border: #c9dcfb;
   --green: #188a4c;
+  --green-bg: #eef8f1;
+  --green-border: #cfe9d8;
   --amber: #b45309;
+  --amber-bg: #fdf6ec;
+  --amber-border: #f0dcc0;
   --red: #c0392b;
+  --purple: #7c3aed;
+  --bg: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #fbfbfc;
+  --bg-hover: #f2f4f7;
+  --bg-code: #f4f5f7;
+  --poster-border: rgba(0, 0, 0, 0.16);
+  --shadow: rgba(0, 0, 0, 0.16);
+  --scanbar-bg: linear-gradient(180deg, #f7faff, #f2f7ff);
+  --scrollbar: #c8ced6;
+  --grip: #9aa1ab;
   --mono: "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+}
+
+/* 深色主题：同步覆盖 Ant Design token 与自定义 CSS 变量。 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --chrome: #1b1c1e;
+  --chrome-2: #26282b;
+  --line: #34363b;
+  --line-2: #2a2c30;
+  --text: #e6e8eb;
+  --muted: #a0a6ae;
+  --muted-2: #78808a;
+  --blue: #4c8dff;
+  --blue-text: #79a8ff;
+  --blue-bg: #1b2a44;
+  --blue-border: #2f4f7d;
+  --green: #4cc27a;
+  --green-bg: #15301f;
+  --green-border: #245c39;
+  --amber: #e0a355;
+  --amber-bg: #33260f;
+  --amber-border: #5a4318;
+  --red: #f06a5e;
+  --purple: #b08cff;
+  --bg: #141414;
+  --bg-elevated: #1d1e20;
+  --bg-subtle: #1b1c1e;
+  --bg-hover: #26282b;
+  --bg-code: #26282b;
+  --poster-border: rgba(255, 255, 255, 0.2);
+  --shadow: rgba(0, 0, 0, 0.55);
+  --scanbar-bg: linear-gradient(180deg, #18243a, #16202f);
+  --scrollbar: #4a4d53;
+  --grip: #6c737c;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 html,
@@ -23,7 +93,7 @@ body,
 body {
   margin: 0;
   overflow: hidden;
-  background: #fff;
+  background: var(--bg);
   color: var(--text);
   font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Microsoft YaHei", sans-serif;
@@ -57,8 +127,8 @@ button {
   width: 17px;
   height: 17px;
   border-radius: 4px;
-  background: #1a1d21;
-  color: #fff;
+  background: var(--text);
+  color: var(--bg);
   display: grid;
   place-items: center;
   font-size: 9px;
@@ -119,13 +189,13 @@ button {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 0 8px;
-  background: #fbfbfc;
+  background: var(--bg-subtle);
   color: var(--muted-2);
 }
 .pathbox span {
   font-family: var(--mono);
   font-size: 11px;
-  color: #31363e;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -140,7 +210,7 @@ button {
   gap: 10px;
   padding: 0 12px;
   border-bottom: 1px solid var(--line);
-  background: #fcfcfd;
+  background: var(--bg-subtle);
 }
 .mlabel {
   font-size: 10.5px;
@@ -181,12 +251,12 @@ button {
   cursor: default;
 }
 .ftab:hover {
-  background: #f2f4f7;
+  background: var(--bg-hover);
   color: var(--text);
 }
 .ftab.on {
   background: var(--blue-bg);
-  color: #1a5fd0;
+  color: var(--blue-text);
   font-weight: 500;
 }
 .ftab .n {
@@ -267,7 +337,7 @@ button {
   width: 26px;
   height: 36px;
   border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.16);
+  border: 1px solid var(--poster-border);
   cursor: zoom-in;
   overflow: hidden;
 }
@@ -295,7 +365,7 @@ button {
   width: 48px;
   height: 3px;
   border-radius: 2px;
-  background: #e9ecef;
+  background: var(--line);
   overflow: hidden;
   flex: none;
 }
@@ -337,7 +407,7 @@ button {
 }
 .sb b {
   font-weight: 500;
-  color: #3a4048;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 .sb.grow {
@@ -351,7 +421,7 @@ button {
   width: 14px;
   height: 14px;
   align-self: flex-end;
-  background-image: radial-gradient(#9aa1ab 1px, transparent 1px);
+  background-image: radial-gradient(var(--grip) 1px, transparent 1px);
   background-size: 3px 3px;
   opacity: 0.6;
 }
@@ -363,7 +433,7 @@ button {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--line);
-  background: #fbfbfc;
+  background: var(--bg-subtle);
 }
 .log-resize {
   height: 5px;
@@ -372,7 +442,7 @@ button {
   background: transparent;
 }
 .log-resize:hover {
-  background: #cfd6df;
+  background: var(--line);
 }
 .clean-summary {
   font-size: 11.5px;
@@ -392,14 +462,14 @@ button {
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 .clean-item {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
-  border-bottom: 1px solid #f0f1f3;
+  border-bottom: 1px solid var(--line-2);
   font-size: 11.5px;
   cursor: pointer;
 }
@@ -407,7 +477,7 @@ button {
   border-bottom: 0;
 }
 .clean-item:hover {
-  background: #f7f8fa;
+  background: var(--bg-hover);
 }
 .clean-item .name {
   flex: 1;
@@ -445,10 +515,10 @@ button {
   font-family: var(--mono);
   font-size: 10.5px;
   line-height: 1.8;
-  color: #4b5159;
+  color: var(--muted);
 }
 .logbody .t {
-  color: #a2a9b2;
+  color: var(--muted-2);
   margin-right: 7px;
 }
 .logbody .ok {
@@ -467,10 +537,10 @@ button {
 .ctx {
   position: fixed;
   z-index: 1001;
-  background: #fff;
+  background: var(--bg-elevated);
   border: 1px solid var(--line);
   border-radius: 6px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 10px 30px var(--shadow);
   padding: 4px;
 }
 .ctx .ant-menu {
@@ -525,7 +595,7 @@ button {
   align-items: center;
   gap: 8px;
   padding: 0 10px;
-  background: #fafbfc;
+  background: var(--bg-subtle);
   border-bottom: 1px solid var(--line);
   font-size: 11px;
   color: var(--muted);
@@ -558,7 +628,7 @@ button {
   white-space: nowrap;
 }
 .pv .to {
-  color: #1a5fd0;
+  color: var(--blue-text);
 }
 .pv .arw {
   color: var(--muted-2);
@@ -576,12 +646,12 @@ button {
 }
 .tag.move {
   color: var(--green);
-  background: #eef8f1;
-  border: 1px solid #cfe9d8;
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
 }
 .tag.skip {
   color: var(--muted-2);
-  background: #f4f5f7;
+  background: var(--bg-code);
   border: 1px solid var(--line);
 }
 
@@ -607,9 +677,9 @@ button {
   padding: 0 3px;
   margin-left: 4px;
   border-radius: 2px;
-  color: #1a5fd0;
-  background: #eef4ff;
-  border: 1px solid #c9dcfb;
+  color: var(--blue-text);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   vertical-align: 1px;
   cursor: default;
@@ -633,7 +703,7 @@ button {
 }
 .ai-hint code {
   font-family: var(--mono);
-  background: #f4f5f7;
+  background: var(--bg-code);
   padding: 0 3px;
   border-radius: 2px;
 }
@@ -662,7 +732,7 @@ button {
 .ai-result code {
   font-family: var(--mono);
   font-size: 11px;
-  color: #1a5fd0;
+  color: var(--blue-text);
 }
 
 /* candidates */
@@ -681,7 +751,7 @@ button {
 .cand-file code {
   font-family: var(--mono);
   font-size: 10.5px;
-  color: #3a4048;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -690,8 +760,8 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid #d6e4ff;
-  background: #f5f9ff;
+  border: 1px solid var(--blue-border);
+  background: var(--blue-bg);
   border-radius: 6px;
   padding: 8px 10px;
   margin: 10px 0;
@@ -701,9 +771,9 @@ button {
 }
 .cand-reason {
   font-size: 10.5px;
-  color: #1a5fd0;
-  background: #f5f9ff;
-  border: 1px solid #d6e4ff;
+  color: var(--blue-text);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
   border-radius: 4px;
   padding: 6px 8px;
   margin-bottom: 8px;
@@ -727,33 +797,33 @@ button {
   cursor: default;
 }
 .cand:hover {
-  border-color: #c9dcfb;
-  background: #fafcff;
+  border-color: var(--blue-border);
+  background: var(--bg-hover);
 }
 .cand.on {
-  border-color: #1f6feb;
-  background: #f5f9ff;
-  box-shadow: inset 0 0 0 1px #1f6feb;
+  border-color: var(--blue);
+  background: var(--blue-bg);
+  box-shadow: inset 0 0 0 1px var(--blue);
 }
 .cand-check {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 1px solid #c9cfd8;
+  border: 1px solid var(--muted-2);
   display: grid;
   place-items: center;
   font-size: 10px;
-  color: #fff;
+  color: var(--bg);
 }
 .cand.on .cand-check {
-  background: #1f6feb;
-  border-color: #1f6feb;
+  background: var(--blue);
+  border-color: var(--blue);
 }
 .cand-poster {
   width: 40px;
   height: 54px;
   border-radius: 3px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--poster-border);
   overflow: hidden;
 }
 .cand-poster img {
@@ -838,7 +908,7 @@ button {
   gap: 4px;
   padding: 6px 12px 7px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #f7faff, #f2f7ff);
+  background: var(--scanbar-bg);
 }
 .scanbar-head {
   display: flex;
@@ -868,7 +938,7 @@ button {
 .scanbar-track {
   height: 4px;
   border-radius: 2px;
-  background: #e3e9f2;
+  background: var(--line);
   overflow: hidden;
 }
 .scanbar-track i {
@@ -919,7 +989,7 @@ button {
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #fafbfc;
+  background: var(--bg-subtle);
   font-size: 11px;
   line-height: 1.7;
   color: var(--muted);
@@ -931,7 +1001,7 @@ button {
 .blacklist-hint code {
   padding: 0 3px;
   border-radius: 3px;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--bg-code);
 }
 .blacklist-hint b {
   color: var(--text);
@@ -1032,7 +1102,7 @@ button {
   overflow: auto;
   padding: 6px;
   border-right: 1px solid var(--line);
-  background: #fafbfc;
+  background: var(--bg-subtle);
 }
 .fpm-section-title {
   padding: 2px 6px 6px;
@@ -1188,7 +1258,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 10px 12px;
-  background: #fbfbfc;
+  background: var(--bg-subtle);
 }
 .lib-stat-card .label {
   font-size: 10.5px;
@@ -1229,7 +1299,7 @@ button {
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  background: #f7f8fa;
+  background: var(--bg-hover);
   border-bottom: 1px solid var(--line);
   font-size: 11.5px;
 }
@@ -1248,7 +1318,7 @@ button {
   font-size: 11.5px;
 }
 .lib-dup-item.keep {
-  background: #f2fbf5;
+  background: var(--green-bg);
 }
 .lib-dup-keep {
   flex: none;

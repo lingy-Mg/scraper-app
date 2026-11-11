@@ -86,7 +86,7 @@ export default function OrganizeModal({ open, config, rows, onCancel, onRun }: P
       width={680}
       footer={
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#636b76' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             将整理 <b>{done.length}</b> 个文件 · <b>{fmtSize(total)}</b>
           </span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>

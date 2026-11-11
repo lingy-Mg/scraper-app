@@ -3,7 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>刮削器</title>
+    <script>
+      // 首屏按系统偏好预设主题，避免深色系统下 React 加载前闪白。
+      try {
+        var prefersDark =
+          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        document.documentElement.dataset.theme = prefersDark ? 'dark' : 'light'
+      } catch (error) {
+        document.documentElement.dataset.theme = 'light'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

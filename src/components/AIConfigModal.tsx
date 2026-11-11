@@ -432,7 +432,7 @@ export default function AIConfigModal({ open, config, onCancel, onSave }: Props)
       width={620}
       footer={
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#636b76' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {enabled ? `AI 已启用 · ${model}` : 'AI 已关闭，将使用正则解析'}
           </span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
