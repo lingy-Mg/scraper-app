@@ -1,4 +1,6 @@
-import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readdir, readFile, stat, writeFile, mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { watch } from 'node:fs'
@@ -6,6 +8,7 @@ import { watch } from 'node:fs'
 export const PLUGIN_ROOT = join(import.meta.dir, 'plugins')
 const DATA_DIR = join(import.meta.dir, 'data')
 const CONFIG_FILE = join(DATA_DIR, 'config.json')
+const CACHE_DIR = join(DATA_DIR, '.plugin-cache')
 
 export interface SourceOpt {
   label: string
@@ -86,6 +89,65 @@ function capabilitiesOf(manifest: PluginManifest): string[] {
   return [...new Set(list.filter((item) => typeof item === 'string' && item.trim()))]
 }
 
+/** 递归列出插件目录内的文件（相对路径，已排序）。 */
+async function collectFiles(dir: string, prefix = ''): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true })
+  const files: string[] = []
+  for (const entry of entries) {
+    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+    if (entry.isDirectory()) files.push(...(await collectFiles(join(dir, entry.name), rel)))
+    else if (entry.isFile()) files.push(rel)
+  }
+  return files.sort()
+}
+
+/**
+ * 目录内容指纹：文件名 + mtime + size。任一文件变化都会换新打包产物。
+ * 统一按插件根目录计算，`_shared/` 与跨插件引用的改动也能触发重建。
+ */
+async function treeHash(root: string, files: string[]): Promise<string> {
+  const hash = createHash('sha1')
+  for (const rel of files) {
+    const info = await stat(join(root, rel))
+    hash.update(`${rel}:${info.mtimeMs}:${info.size}\n`)
+  }
+  return hash.digest('hex').slice(0, 12)
+}
+
+/**
+ * 把插件目录打包成单个 ESM 再加载：
+ * 入口 import 的本地模块会一起进入产物，改目录内任意 .ts 都能热重载。
+ */
+async function bundlePlugin(id: string, dir: string, entry: string): Promise<string> {
+  const hash = await treeHash(PLUGIN_ROOT, await collectFiles(PLUGIN_ROOT))
+  const base = `${id}-${hash}`
+  const outfile = join(CACHE_DIR, `${base}.mjs`)
+  if (existsSync(outfile)) return outfile
+
+  await mkdir(CACHE_DIR, { recursive: true })
+  const result = await Bun.build({
+    entrypoints: [entry],
+    outdir: CACHE_DIR,
+    target: 'bun',
+    format: 'esm',
+    naming: `${base}.mjs`,
+    sourcemap: 'none',
+    throw: false
+  })
+
+  if (!result.success) {
+    const detail = result.logs
+      .map((log) => (typeof log === 'object' && log && 'message' in log ? String(log.message) : String(log)))
+      .join('; ')
+    throw new Error(`插件打包失败：${detail || '未知错误'}`)
+  }
+
+  const output = result.outputs[0]
+  if (!output) throw new Error('插件打包没有输出文件')
+  return output.path
+}
+
 async function loadOne(id: string): Promise<LoadedPlugin> {
   const dir = join(PLUGIN_ROOT, id)
   try {
@@ -95,7 +157,8 @@ async function loadOne(id: string): Promise<LoadedPlugin> {
     if (!manifest.labels?.code || !manifest.labels?.title) throw new Error('缺少 labels')
 
     const entry = join(dir, manifest.entry ?? 'index.ts')
-    const mod = await import(`${pathToFileURL(entry).href}?v=${++generation}`)
+    const bundled = await bundlePlugin(id, dir, entry)
+    const mod = await import(`${pathToFileURL(bundled).href}?v=${++generation}`)
     const impl = mod.default ?? mod
     const config: PluginConfig = {
       ...fallbackDefaults,
@@ -179,9 +242,17 @@ export function watchPlugins() {
   watch(PLUGIN_ROOT, { recursive: true }, (_event, filename) => {
     if (!filename) return
     const id = String(filename).split(/[\\/]/)[0]
-    if (!id || id.startsWith('_')) return
+    if (!id) return
+    // `_shared` 被多个插件引用：任一变动都重新加载所有插件。
+    const shared = id.startsWith('_')
+    if (!shared && !existsSync(join(PLUGIN_ROOT, id))) return
     if (watchTimer) clearTimeout(watchTimer)
     watchTimer = setTimeout(async () => {
+      if (shared) {
+        await reloadAll()
+        console.log('[plugin] reloaded all (shared)')
+        return
+      }
       await loadOne(id)
       reloadListener?.(id)
       console.log(`[plugin] reloaded ${id}`)
