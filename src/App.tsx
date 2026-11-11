@@ -192,6 +192,7 @@ export default function ScraperApp() {
   const [logOpen, setLogOpen] = useState(true)
   const [logHeight, setLogHeight] = useState(180)
   const [compact, setCompact] = useState(false)
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
   const [organizeOpen, setOrganizeOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
@@ -558,6 +559,7 @@ export default function ScraperApp() {
         setLogOpen(settings.logOpen ?? true)
         setLogHeight(settings.logHeight ?? 180)
         setThemePreference(settings.theme ?? 'system')
+        setColumnWidths(settings.table?.widths ?? {})
         const savedBlacklist = normalizeBlacklist(settings.blacklist ?? [])
         blacklistRef.current = savedBlacklist
         setBlacklist(savedBlacklist)
@@ -670,6 +672,7 @@ export default function ScraperApp() {
         logOpen,
         logHeight,
         theme: themePreference,
+        table: { widths: columnWidths },
         blacklist
       }
       native
@@ -687,6 +690,7 @@ export default function ScraperApp() {
     logOpen,
     logHeight,
     themePreference,
+    columnWidths,
     blacklist,
     hydrated,
     nativeMode
@@ -1938,6 +1942,8 @@ export default function ScraperApp() {
           compact={compact}
           scanning={scan.active}
           scanFound={scan.found}
+          columnWidths={columnWidths}
+          onColumnWidthsChange={setColumnWidths}
           onSelectedChange={setSelected}
           onPoster={openPoster}
           onRemove={removeRow}

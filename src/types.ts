@@ -3,6 +3,11 @@ export type ModeKey = 'av' | 'movie' | 'tv' | 'anime'
 /** 主题偏好：跟随系统时由浏览器 `prefers-color-scheme` 决定实际主题。 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
+/** 表格列宽持久化；键为列 key。 */
+export interface TableSettings {
+  widths?: Record<string, number>
+}
+
 export type RowStatus = 'done' | 'unmatched' | 'running' | 'waiting' | 'error' | 'review'
 
 export type NativeMode = 'http'
@@ -157,6 +162,8 @@ export interface Settings {
   logHeight?: number
   /** 界面主题；旧设置缺少该字段时按 `system` 处理。 */
   theme?: ThemePreference
+  /** 表格列宽；旧设置缺省时使用内置默认宽度。 */
+  table?: TableSettings
   /**
    * 文件名黑名单：不区分大小写，支持 `*` / `?` 通配符；
    * 不含通配符时按包含匹配。命中的文件扫描时跳过、列表中隐藏。

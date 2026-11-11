@@ -295,11 +295,28 @@ button {
   font-size: 12px;
 }
 .tablewrap .ant-table-thead > tr > th {
+  position: relative;
   font-size: 11px;
   font-weight: 500;
   padding-top: 4px !important;
   padding-bottom: 4px !important;
   white-space: nowrap;
+}
+/* 列宽拖动手柄：贴在表头右边界，双击恢复默认宽度。 */
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  z-index: 3;
+  cursor: col-resize;
+  user-select: none;
+}
+.col-resize:hover,
+.col-resize:active {
+  background: var(--blue);
+  opacity: 0.35;
 }
 .tablewrap .ant-table-tbody > tr > td {
   height: 44px;

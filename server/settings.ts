@@ -23,6 +23,30 @@ export type ThemePreference = 'light' | 'dark' | 'system'
 
 const THEMES: readonly ThemePreference[] = ['light', 'dark', 'system']
 
+/** 可持久化宽度的列 key（含固定列，宽度可调但不可隐藏）。 */
+export const TABLE_WIDTH_KEYS = [
+  'status',
+  'poster',
+  'code',
+  'file',
+  'title',
+  'maker',
+  'actors',
+  'dur',
+  'size',
+  'src',
+  'progress',
+  'act'
+] as const
+
+/** 表格列宽持久化；单位像素，读取时裁剪到合理区间。 */
+export interface TableSettings {
+  widths?: Record<string, number>
+}
+
+const MIN_COLUMN_WIDTH = 40
+const MAX_COLUMN_WIDTH = 1200
+
 /** 媒体库来源（扫描根目录）；只记录路径，不移动/删除任何文件。 */
 export interface MediaSource {
   path: string
@@ -47,6 +71,8 @@ export interface Settings {
   logHeight?: number
   /** 界面主题；非法值回退为 `system`。 */
   theme?: ThemePreference
+  /** 表格列宽；非法值会被忽略。 */
+  table?: TableSettings
   /** 文件名黑名单：扫描时跳过、列表中隐藏。 */
   blacklist?: string[]
 }
@@ -106,6 +132,7 @@ export function defaultSettings(): Settings {
     logOpen: true,
     logHeight: 180,
     theme: 'system',
+    table: { widths: {} },
     blacklist: []
   }
 }
@@ -119,6 +146,23 @@ export function normalizeTheme(value: unknown): ThemePreference {
   return typeof value === 'string' && THEMES.includes(value as ThemePreference)
     ? (value as ThemePreference)
     : 'system'
+}
+
+/** 兼容旧设置：忽略未知列与非法宽度，并把数值限制在 40–1200。 */
+export function normalizeTable(
+  value: unknown,
+  fallback: TableSettings = { widths: {} }
+): TableSettings {
+  if (!isRecord(value)) return { ...fallback, widths: { ...(fallback.widths ?? {}) } }
+  const widths: Record<string, number> = {}
+  if (isRecord(value.widths)) {
+    for (const key of TABLE_WIDTH_KEYS) {
+      const raw = value.widths[key]
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) continue
+      widths[key] = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(raw)))
+    }
+  }
+  return { ...fallback, widths }
 }
 
 /** 兼容旧设置：缺失/损坏的 sources 一律回退为空数组，并去重。 */
@@ -156,6 +200,7 @@ export async function loadSettings(): Promise<Settings> {
       ...defaults,
       ...parsed,
       theme: normalizeTheme(parsed.theme),
+      table: normalizeTable(parsed.table, defaults.table),
       sources: normalizeSources(parsed.sources, defaults.sources ?? []),
       ai: {
         ...defaults.ai,

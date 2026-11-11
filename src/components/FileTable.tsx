@@ -1,6 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Button, Spin, Table, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import type { Key } from 'react'
+import type { Key, MouseEvent as ReactMouseEvent, ThHTMLAttributes } from 'react'
 import type { ModeConfig, Row, RowStatus } from '../types'
 import { fmtDur, fmtSize } from '../utils'
 
@@ -20,6 +21,55 @@ const STATUS: Record<RowStatus, { label: string; color: string }> = {
   review: { label: '待选择', color: 'var(--purple)' }
 }
 
+/** 与 src/App.tsx 的列设置 key 保持一致；双击恢复这里的默认值。 */
+export const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
+  status: 88,
+  poster: 46,
+  code: 118,
+  file: 220,
+  title: 260,
+  maker: 120,
+  actors: 140,
+  dur: 116,
+  size: 94,
+  src: 66,
+  progress: 104,
+  act: 88
+}
+
+const MIN_COLUMN_WIDTH = 40
+const MAX_COLUMN_WIDTH = 1200
+
+const clampWidth = (value: number) =>
+  Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(value)))
+
+interface ResizeHeaderProps extends ThHTMLAttributes<HTMLTableCellElement> {
+  onResize?: (event: ReactMouseEvent) => void
+  onResetWidth?: () => void
+}
+
+/** 自定义表头：右侧细条拖动改列宽，双击恢复默认。 */
+function ResizableTitle({ onResize, onResetWidth, children, ...rest }: ResizeHeaderProps) {
+  return (
+    <th {...rest}>
+      {children}
+      {onResize ? (
+        <span
+          className="col-resize"
+          title="拖动调整列宽，双击恢复默认"
+          onMouseDown={onResize}
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onResetWidth?.()
+          }}
+        />
+      ) : null}
+    </th>
+  )
+}
+
 interface Props {
   rows: Row[]
   mode: ModeConfig
@@ -29,6 +79,9 @@ interface Props {
   compact: boolean
   scanning?: boolean
   scanFound?: number
+  /** 已持久化的列宽；缺省列使用 DEFAULT_COLUMN_WIDTHS。 */
+  columnWidths: Record<string, number>
+  onColumnWidthsChange: (widths: Record<string, number>) => void
   onSelectedChange: (keys: Key[]) => void
   onPoster: (row: Row) => void
   onRemove: (row: Row) => void
@@ -46,6 +99,8 @@ export default function FileTable({
   compact,
   scanning = false,
   scanFound = 0,
+  columnWidths,
+  onColumnWidthsChange,
   onSelectedChange,
   onPoster,
   onRemove,
@@ -54,12 +109,66 @@ export default function FileTable({
   onContext
 }: Props) {
   const shortLimit = minDur * 60
+  const [liveWidths, setLiveWidths] = useState<Record<string, number>>(() => ({
+    ...columnWidths
+  }))
+
+  useEffect(() => {
+    setLiveWidths({ ...columnWidths })
+  }, [columnWidths])
+
+  const widthOf = (key: string) =>
+    clampWidth(liveWidths[key] ?? DEFAULT_COLUMN_WIDTHS[key] ?? 100)
+
+  /** 拖动期间只更新本地状态，松开鼠标后再写入设置，避免每帧触发持久化。 */
+  const startResize = (key: string) => (event: ReactMouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const startX = event.clientX
+    const startWidth = widthOf(key)
+    let latest = { ...liveWidths }
+
+    const onMove = (move: MouseEvent) => {
+      latest = { ...latest, [key]: clampWidth(startWidth + move.clientX - startX) }
+      setLiveWidths(latest)
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      onColumnWidthsChange(latest)
+    }
+
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const resetWidth = (key: string) => {
+    const next = { ...liveWidths, [key]: DEFAULT_COLUMN_WIDTHS[key] ?? 100 }
+    setLiveWidths(next)
+    onColumnWidthsChange(next)
+  }
+
+  const headerCellProps = (key: string) =>
+    ({
+      onResize: startResize(key),
+      onResetWidth: () => resetWidth(key)
+    }) as unknown as ThHTMLAttributes<HTMLTableCellElement>
+
+  const resizable = (key: string) => ({
+    onHeaderCell: () => headerCellProps(key)
+  })
+
+  const muted = { fontSize: 11, color: 'var(--muted)' }
 
   const columns: ColumnsType<Row> = [
     {
       title: '状态',
       dataIndex: 'status',
-      width: 88,
+      key: 'status',
+      width: widthOf('status'),
+      ...resizable('status'),
       render: (status: RowStatus) => (
         <span className="st" style={{ color: STATUS[status].color }}>
           <i style={{ background: STATUS[status].color }} />
@@ -68,9 +177,10 @@ export default function FileTable({
       )
     },
     {
-      title: '',
+      title: '海报',
       key: 'poster',
-      width: 46,
+      width: widthOf('poster'),
+      ...resizable('poster'),
       render: (_, row) => (
         <div className="poster" onClick={() => onPoster(row)} title="预览海报">
           {row.posterSrc ? (
@@ -87,7 +197,9 @@ export default function FileTable({
     {
       title: mode.codeLabel,
       dataIndex: 'code',
-      width: 118,
+      key: 'code',
+      width: widthOf('code'),
+      ...resizable('code'),
       sorter: (a, b) => (a.code || '~').localeCompare(b.code || '~'),
       render: (code: string, row) =>
         code ? (
@@ -104,8 +216,24 @@ export default function FileTable({
         )
     },
     {
+      title: '文件名',
+      dataIndex: 'file',
+      key: 'file',
+      width: widthOf('file'),
+      ...resizable('file'),
+      ellipsis: true,
+      render: (file: string, row) => (
+        <span style={muted} title={row.path || file}>
+          {file}
+        </span>
+      )
+    },
+    {
       title: mode.titleLabel,
       dataIndex: 'title',
+      key: 'title',
+      width: widthOf('title'),
+      ...resizable('title'),
       ellipsis: true,
       render: (title: string, row) => (
         <span style={{ fontSize: 11.5 }} title={row.path || row.file}>
@@ -114,12 +242,35 @@ export default function FileTable({
       )
     },
     {
+      title: '片商',
+      dataIndex: 'maker',
+      key: 'maker',
+      width: widthOf('maker'),
+      ...resizable('maker'),
+      ellipsis: true,
+      render: (maker?: string) => <span style={muted}>{maker || '—'}</span>
+    },
+    {
+      title: '演员',
+      dataIndex: 'actors',
+      key: 'actors',
+      width: widthOf('actors'),
+      ...resizable('actors'),
+      ellipsis: true,
+      render: (actors?: string) => <span style={muted}>{actors || '—'}</span>
+    },
+    {
       title: '时长',
       dataIndex: 'dur',
-      width: 116,
+      key: 'dur',
+      width: widthOf('dur'),
+      ...resizable('dur'),
       sorter: (a, b) => a.dur - b.dur,
       render: (dur: number) => (
-        <span className="dur" style={{ color: dur > 0 && dur < shortLimit ? 'var(--amber)' : undefined }}>
+        <span
+          className="dur"
+          style={{ color: dur > 0 && dur < shortLimit ? 'var(--amber)' : undefined }}
+        >
           {fmtDur(dur)}
           {dur > 0 && dur < shortLimit && (
             <span
@@ -140,7 +291,9 @@ export default function FileTable({
     {
       title: '大小',
       dataIndex: 'size',
-      width: 94,
+      key: 'size',
+      width: widthOf('size'),
+      ...resizable('size'),
       sorter: (a, b) => a.size - b.size,
       render: (size: number) => (
         <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
@@ -151,17 +304,17 @@ export default function FileTable({
     {
       title: '来源',
       dataIndex: 'src',
-      width: 66,
-      render: (src: string) => (
-        <span className="muted" style={{ fontSize: 11 }}>
-          {src || '—'}
-        </span>
-      )
+      key: 'src',
+      width: widthOf('src'),
+      ...resizable('src'),
+      render: (src: string) => <span style={muted}>{src || '—'}</span>
     },
     {
       title: '进度',
       dataIndex: 'progress',
-      width: 104,
+      key: 'progress',
+      width: widthOf('progress'),
+      ...resizable('progress'),
       render: (_, row) => {
         if (row.status === 'unmatched') return <span className="muted">—</span>
         const percent = row.status === 'done' ? 100 : row.progress
@@ -181,9 +334,10 @@ export default function FileTable({
       }
     },
     {
-      title: '',
+      title: '操作',
       key: 'act',
-      width: 88,
+      width: widthOf('act'),
+      ...resizable('act'),
       align: 'right',
       render: (_, row) =>
         row.status === 'done' ? (
@@ -206,15 +360,19 @@ export default function FileTable({
     }
   ]
 
+  const totalWidth =
+    columns.reduce((sum, column) => sum + Number(column.width ?? 0), 0) + 34
+
   return (
     <div className={`tablewrap ${compact ? 'compact' : ''}`}>
       <Table<Row>
         size="small"
         rowKey="uid"
         columns={columns}
+        components={{ header: { cell: ResizableTitle } }}
         dataSource={rows}
         pagination={false}
-        scroll={{ y: Math.max(120, height - 39), x: 1060 }}
+        scroll={{ y: Math.max(120, height - 39), x: totalWidth }}
         rowSelection={{
           selectedRowKeys: selected,
           onChange: onSelectedChange,
