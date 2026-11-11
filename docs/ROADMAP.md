@@ -1,6 +1,6 @@
 # 路线图与待办
 
-> 状态日期：2026-11-10。完成后请勾选并补充验证方式。
+> 状态日期：2026-11-11。完成后请勾选并补充验证方式。
 
 ## 已完成
 
@@ -12,11 +12,10 @@
 - [x] TMDB 电影/电视剧（v3 Key / v4 Token）
 - [x] Bangumi 动漫（匿名 / Token）
 - [x] AI：OpenAI 兼容 + OpenCode CLI + JSON 重试 + 正则回退
-- [x] SQLite 媒体库（Bun + Rust），模式恢复
+- [x] SQLite 媒体库（Bun），模式恢复
 - [x] 短片默认隐藏、阈值可调、清理弹窗文件列表与勾选
 - [x] 日志面板默认展开、拖动高度、持久化
 - [x] 整理写 NFO + 封面
-- [x] 单 exe 桌面打包（`npm run pack:desktop`）
 - [x] AGENTS.md / AI_HANDOFF / 契约文档
 
 ## 待办（按优先级）
@@ -34,11 +33,11 @@
 - 字幕需要 OpenSubtitles 或本地字幕目录扫描（先做本地匹配）
 - 验收：模式配置里的「预告片/字幕」开关真正生效；失败写 warning
 
-### P3 打包版插件宿主
+### P3 插件宿主增强（B/S 单端）
 
-- 目标：自定义插件在安装后的 exe 中也可用
-- 方案：`bun build --compile server/index.ts` → `src-tauri/binaries/`，Tauri sidecar 启动并注入端口/token
-- 验收：打包版模式栏显示「插件」；插件热重载可用
+- 现状：Bun 进程直接加载 `server/plugins/*`，插件热重载可用
+- 计划：插件异常隔离、超时与失败重试；插件配置校验
+- 验收：单个插件崩溃不影响 API；错误在模式栏可见
 
 ### P4 媒体库增强
 
@@ -50,9 +49,8 @@
 ### P5 自动化测试
 
 - Bun：扫描/整理/媒体库/AI 解析的单元测试
-- Rust：providers/library/javdb 已有单测，补 organize 边界
 - UI：Playwright 或浏览器脚本覆盖扫描→刮削→整理→重载
-- 验收：CI 可跑 tsc + cargo test + bun build
+- 验收：CI 可跑 `tsc --noEmit` + `bun build server/index.ts` + `vite build`
 
 ### P6 体验
 
@@ -77,15 +75,25 @@
 ## 2026-11-11 扫描进度可见性
 
 - [x] 扫描拆成 `walk`（枚举路径）→ `probe`（读时长）两阶段，边扫边推送
-- [x] Tauri：`scan_folder` 推送 `scan-progress` 事件；Bun：`/api/scan` 支持 NDJSON 流
+- [x] Bun：`/api/scan` 支持 NDJSON 流
 - [x] 前端新增 `ScanProgressBar`：不确定进度动画 + `done/total` 百分比 + 当前文件 + 用时/预计剩余
 - [x] 表格按批增量渲染；空表显示扫描动画；扫描期间禁用选择/整理/刮削并暂停媒体库落库
-- 验证：`npx tsc --noEmit`、`bun build`、`cargo check`；大目录扫描时进度条与行数实时增长
+- 验证：`npx tsc --noEmit`、`bun build server/index.ts`；大目录扫描时进度条与行数实时增长
+
+## 2026-11-11 B/S 单端架构改造
+
+- [x] 删除 `src-tauri/`、Tauri 依赖与打包脚本，移除桌面窗口控制
+- [x] `src/native.ts` 只保留同源 HTTP 通道（`native.mode === 'http'`）
+- [x] 新增 `/api/fs/roots`、`/api/fs/list` 与网页内目录选择弹窗，不再调用系统对话框
+- [x] 回收站改为单 PowerShell 进程批量删除（`SHFileOperation` + 逐条回退）
+- [x] Bun 单进程托管 `dist/` + API + 插件，新增 `npm run start`
+- [x] 契约文档、AGENTS、AI_HANDOFF 同步为 B/S 单端
+- 验证：`npx tsc --noEmit`、`bun build server/index.ts`、`npm run build`；20 个文件批量删除 0.69s，`removed=20`
 
 ## 2026-11-11 文件名黑名单
 
 - [x] `Settings.blacklist` 持久化；不区分大小写，`*`/`?` 通配符，无通配符按包含匹配
-- [x] 扫描时在枚举阶段跳过命中文件（Tauri/Bun 双后端），不探测、不计数、不入库
+- [x] 扫描时在枚举阶段跳过命中文件（Bun 后端），不探测、不计数、不入库
 - [x] 前端对已加载的命中行整行隐藏，并从计数/刮削/整理/清理中排除
 - [x] 右键「拉黑此文件名」+ `文件 → 文件名黑名单…` 管理弹窗 + 筛选栏入口
 - [x] 只隐藏不删除文件；下次 replace 扫描顺带清理媒体库旧记录

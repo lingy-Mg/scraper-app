@@ -1,21 +1,18 @@
-# 原生桥接契约（Tauri ⇄ Bun ⇄ React）
+# 桥接契约（React ⇄ Bun HTTP）
 
-> 本文件是前端、Tauri Rust 侧、Bun 宿主三方共同遵守的接口约定。
+> 本文件是前端与 Bun 后端共同遵守的接口约定。
 > 任何一侧改动接口，必须同步修改本文件。
 
 ## 1. 运行环境与通道
 
-前端按以下优先级选择后端：
+纯 B/S 单端：浏览器加载前端，同源访问 Bun 提供的 `/api`。
 
-1. `window.__TAURI_INTERNALS__` 存在 → 调用 Tauri `invoke`（生产桌面应用）。
-2. 否则 `GET /api/info` 在 800ms 内成功 → 调用 Bun HTTP 接口（`npm run dev`）。
-3. 否则进入「演示模式」：只使用内置数据，所有原生功能提示不可用。
-
-Tauri 命令与 Bun HTTP 接口在**语义、入参、返回值**上完全一致，仅传输方式不同。
-
-- 前端统一通过 `src/native.ts` 的 `native.scanFolder()` 等方法调用，业务组件不得直接 `invoke` 或 `fetch`。
+- 开发：Vite(5173) 提供前端，把 `/api`、`/plugins`、`/ws` 代理到 Bun(5174)。
+- 生产：`npm run start` 由 Bun(5174) 同时托管 `dist/` 与 API，SPA 未知路径回退 `index.html`。
+- 服务只监听 `127.0.0.1`。
+- 前端统一通过 `src/native.ts` 的 `native.scanFolder()` 等方法调用，业务组件不得直接 `fetch`。
 - 所有 JSON 字段使用 **camelCase**。
-- 失败时：Tauri 命令返回 `Err(String)`；HTTP 返回 `{ "error": string, "code"?: string }` 且状态码 4xx/5xx。
+- 失败时 HTTP 返回 `{ "error": string }` 且状态码 4xx/5xx。
 - 路径一律使用**绝对路径**；返回给前端的路径使用当前平台分隔符。
 
 ## 2. 共享类型
@@ -40,8 +37,7 @@ export interface ScanRequest {
 }
 
 /**
- * 扫描进度。Tauri 通过 `scan-progress` 事件推送；
- * HTTP 通过 `/api/scan` 的 NDJSON 流推送同一结构。
+ * 扫描进度。通过 `/api/scan` 的 NDJSON 流推送。
  */
 export interface ScanProgress {
   scanId: string              // 前端生成，用于过滤事件
@@ -93,7 +89,7 @@ export interface AppInfo {
   version: string
   platform: string
   ffprobe: boolean             // ffprobe 是否可用
-  native: boolean              // 是否 Tauri 原生后端
+  native: boolean              // 保留字段，B/S 版恒为 false
 }
 
 export interface Settings {
@@ -157,35 +153,9 @@ export interface AIPickResult {
 }
 ```
 
-## 3. Tauri 命令
+## 3. 后端行为约定
 
-所有命令在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中注册。
-
-| 命令 | 入参 | 返回 |
-|---|---|---|
-| `app_info` | — | `AppInfo` |
-| `scan_folder` | `{ path, recursive?, scanId?, blacklist? }` | `MediaFile[]`；同时发 `scan-progress` 事件 |
-| `probe_file` | `{ path }` | `MediaFile` |
-| `pick_folder` | — | `string \| null` |
-| `organize_files` | `OrganizeRequest` | `OrganizeResult[]` |
-| `trash_files` | `{ paths: string[] }` | `TrashResult` |
-| `load_settings` | — | `Settings` |
-| `save_settings` | `{ settings: Settings }` | `void` |
-| `ai_test` | `{ config: AIConfig }` | `AITestResult` |
-| `ai_identify` | `{ config, filename }` | `AIIdentifyResult` |
-| `ai_pick` | `{ config, filename, candidates }` | `AIPickResult` |
-| `javdb_identify` | `{ filename }` | `Candidate[]` |
-| `javdb_detail` | `{ id }` | `object`（含 `magnets`） |
-| `cover_cache` | `{ url }` | `string`（data URL，完整封面） |
-| `cover_crop` | `{ url, x, y, width, height }` | `string`（data URL，手动裁剪） |
-| `open_path` | `{ path }` | `void` |
-| `reveal_path` | `{ path }` | `void` |
-| `window_minimize` | — | `void` |
-| `window_toggle_maximize` | — | `void` |
-| `window_close` | — | `void` |
-
-命令参数使用 Tauri 默认的 camelCase 映射（Rust 侧用 `#[tauri::command]`，结构体 `#[serde(rename_all = "camelCase")]`）。
-前端调用方式：`invoke('scan_folder', { path, recursive: true, scanId: 'scan-xxx', blacklist: ['sample'] })`。
+具体 HTTP 路由见第 5 节；`src/native.ts` 的方法与路由一一对应。
 
 ### 3.1 扫描规则
 
@@ -195,7 +165,7 @@ export interface AIPickResult {
   1. `.mp4/.m4v/.mov` 直接解析 `moov/mvhd`（不依赖外部程序）。
   2. `ffprobe`：`-v error -show_entries format=duration -of json`，同时取 `stream=width,height,codec_name`。
   3. 都失败 → `duration: null`, `probedBy: "none"`。
-- `ffprobe` 查找顺序：`PATH` → 可执行文件同目录 → `src-tauri/binaries/`。
+- `ffprobe` 查找顺序：`PATH` → 可执行文件同目录 → 项目根目录 `binaries/`。
 - 结果按 `name` 排序。
 - Windows 下启动子进程必须加 `CREATE_NO_WINDOW`，避免弹黑框。
 
@@ -217,7 +187,7 @@ export interface AIPickResult {
   - 含 `*` 或 `?` → 通配符整名匹配（`*` 任意长度，`?` 单个字符）；
   - 不含通配符 → 包含匹配（`sample` 命中 `sample.mp4`、`my-sample.mkv`）；
   - 任一条命中即视为黑名单文件。
-- 三端实现必须一致：`src/utils.ts`（显示过滤）、`server/scan.ts`（Bun 扫描）、`src-tauri/src/media.rs`（Rust 扫描）。
+- 两份实现必须一致：`src/utils.ts`（显示过滤）、`server/scan.ts`（扫描跳过）。
 - 黑名单文件在 `walk` 阶段直接跳过：不计数、不探测、不返回，也永远不会写入媒体库。
 - 前端隐藏已加载的命中行（不删除文件）；下一次 replace 扫描会因文件不再返回而顺带清理其媒体库记录。
 - 右键表格行「拉黑此文件名」按完整文件名添加一条规则；`文件 → 文件名黑名单…` 可增删规则。
@@ -236,12 +206,11 @@ export interface AIPickResult {
 ### 3.3 删除
 
 - 必须进入系统回收站，禁止永久删除。
-- Rust 使用 `trash` crate；Bun 使用 Windows `Microsoft.VisualBasic.FileIO.FileSystem::DeleteFile`（`SendToRecycleBin`）。
+- Windows：一次 PowerShell 进程优先调用 `SHFileOperation`（`FOF_ALLOWUNDO`，路径列表双重 null 结尾）批量处理；返回码非 0、被中断或仍有残留时，在**同一进程内**回退为逐条 `Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(..., SendToRecycleBin)`，并返回失败明细。非 Windows 使用 `trash-put`。
 
 ### 3.4 设置持久化
 
-- Tauri：`app_config_dir()/settings.json`，原子写入（写临时文件再 rename）。
-- Bun：`server/data/settings.json`。
+- 存储位置：`server/data/settings.json`，原子写入（写临时文件再 rename）。
 - 文件不存在 → 返回默认值（`ai` 使用内置默认配置，`lastFolder` 为空）。
 - `save_settings` 整体覆盖，不做深合并。
 
@@ -267,23 +236,25 @@ export interface AIPickResult {
 
 ## 4.1 JavDB 元数据
 
-- Bun 实现：`server/javdb.ts`；Rust 实现：`src-tauri/src/javdb.rs`；协议细节见 `docs/javdb-app-api.md`。
+- 实现：`server/javdb.ts`；协议细节见 `docs/javdb-app-api.md`。
 - 有番号时只接受大小写/分隔符等价的**唯一精确匹配**，绝不回退搜索首项；无番号时按清洗后的名称返回前 N 条。
 - `duration` 在 App API 中是**分钟**，进入 `Candidate`/`Row` 前统一换算为秒（`<= 1000` 视为分钟）。
-- Bun 侧串行 + 1.2s 间隔 + host 失败切换 + 5 分钟缓存。
+- 串行 + 1.2s 间隔 + host 失败切换 + 5 分钟缓存。
 - `Candidate` 额外字段：`posterUrl`、`maker`、`actors`、`duration`、`detailId`。
-- 识别优先级：插件（Bun）→ 原生 JavDB（Tauri）→ AI/正则。
+- 识别优先级：插件（Bun）→ JavDB → AI/正则。
+- 封面必须经 `/api/cover`（可选裁剪参数）解码后显示，禁止直接加载远程图片。
 
 ## 5. Bun HTTP 接口
 
-前缀 `/api`，仅监听 `127.0.0.1`。入参/返回与第 3 节一一对应。
+前缀 `/api`，仅监听 `127.0.0.1`。所有字段 camelCase。
 
 | 方法 | 路径 | 入参 | 返回 |
 |---|---|---|---|
 | GET | `/api/info` | — | `AppInfo` |
 | POST | `/api/scan` | `ScanRequest`（`stream=true` 时流式） | `MediaFile[]`；流式为 NDJSON |
 | POST | `/api/probe` | `{ path }` | `MediaFile` |
-| POST | `/api/pick-folder` | — | `{ path: string \| null }`（非 Tauri 无法弹窗，返回 400） |
+| GET | `/api/fs/roots` | — | `{ roots: FsRoot[] }`（`Cache-Control: no-store`） |
+| GET | `/api/fs/list?path=<绝对路径>` | query `path` | `FsListing`（`Cache-Control: no-store`） |
 | POST | `/api/organize` | `OrganizeRequest` | `OrganizeResult[]` |
 | POST | `/api/trash` | `{ paths: string[] }` | `TrashResult` |
 | GET | `/api/settings` | — | `Settings` |
@@ -313,9 +284,37 @@ export interface AIPickResult {
 - 前端必须兼容后端不返回 NDJSON 的旧实现（直接按 JSON 数组读取）。
 - `blacklist` 在流式与非流式下行为一致：命中的文件在枚举阶段即被跳过。
 
+### 5.2 文件系统浏览（网页内目录选择器）
+
+```ts
+export interface FsRoot {
+  name: string
+  path: string
+  kind: 'drive' | 'home' | 'common'
+}
+
+export interface FsEntry {
+  name: string
+  path: string
+  isDir: true
+  hidden: boolean       // 以 . 开头的隐藏目录
+}
+
+export interface FsListing {
+  path: string          // resolve 后的绝对路径
+  parent: string | null // 根目录为 null
+  entries: FsEntry[]    // 仅目录，按名称排序
+}
+```
+
+- `GET /api/fs/roots`：Windows 盘符（PowerShell `Get-PSDrive -PSProvider FileSystem`，失败回退 A–Z 探测，缓存 60s）+ 主目录 + 桌面/下载/文档/视频 + 项目根目录。
+- `GET /api/fs/list`：`path` 必须为绝对路径，`resolve` 后必须存在且是目录，否则 400；无权限返回 403。
+- 前端 `FolderPickerModal`：左侧位置列表，中间目录列表（单击选中、双击进入），顶部面包屑 + 上一级 + 手动绝对路径跳转，底部「选择此文件夹」。
+- `native.pickFolder()` 不调用系统对话框，而是触发该弹窗并返回选中的绝对路径。
+
 ## 6. 前端接入要求
 
-- `src/native.ts` 暴露 `native` 对象与 `native.mode: 'tauri' | 'http' | 'demo'`。
+- `src/native.ts` 暴露 `native` 对象与 `native.mode: 'http'`（B/S 单端，始终为 `http`）。
 - 应用启动顺序：`app_info` → `load_settings` → `fetchPlugins`（失败则内置模式）→ 若 `lastFolder` 存在则自动扫描。
 - 「选择文件夹」必须调用 `native.pickFolder()`；未选中时不做任何事。
 - 扫描必须订阅进度并在 UI 立即反馈：
@@ -332,6 +331,5 @@ export interface AIPickResult {
 - 「整理」使用真实 `native.organize()`，按返回结果逐行更新日志与状态，失败必须显示原因。
 - 「删除 / 清理短片」使用 `native.trash()`，失败项保留在表格并提示。
 - 所有配置变更（AI、模式、上次目录）调用 `native.saveSettings()` 持久化（500ms 防抖）。
-- 窗口按钮调用对应 `window_*` 命令；非 Tauri 环境隐藏窗口按钮。
 - 状态栏的 ffprobe 状态、速度、任务数使用真实值，不再写死。
-- 演示模式必须显式标注，且不得把演示数据写入设置文件。
+- 浏览器环境没有窗口最小化/最大化/关闭权限，界面不提供桌面窗口按钮。

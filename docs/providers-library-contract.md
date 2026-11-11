@@ -1,6 +1,6 @@
 # 媒体库与元数据源接口约定
 
-> 本文件用于并行开发：Bun/Rust 两侧实现必须与下列签名、字段、行为一致。
+> 本文件用于并行开发：前端与 Bun 实现必须与下列签名、字段、行为一致。
 
 ## 1. 媒体库（SQLite）
 
@@ -79,27 +79,6 @@ CREATE TABLE IF NOT EXISTS items (
 - 数据库目录不存在时创建。
 - 不要在模块加载时执行不可恢复的破坏性操作。
 
-### 1.3 Rust
-
-文件：`src-tauri/src/library.rs`
-
-```rust
-#[tauri::command]
-pub fn library_list(app: tauri::AppHandle) -> Result<Vec<LibraryItem>, String>;
-#[tauri::command]
-pub fn library_upsert(app: tauri::AppHandle, items: Vec<LibraryItem>) -> Result<usize, String>;
-#[tauri::command]
-pub fn library_remove(app: tauri::AppHandle, paths: Vec<String>) -> Result<usize, String>;
-#[tauri::command]
-pub fn library_clear(app: tauri::AppHandle, mode: Option<String>) -> Result<usize, String>;
-```
-
-- 数据库：`app.path().app_data_dir()?/library.db`，自动创建目录。
-- 结构体 `#[serde(rename_all = "camelCase")]`，字段同上，全部可选字段用 `Option`。
-- `lib.rs` 的 `invoke_handler` 由集成方注册，**不要修改 lib.rs**。
-- 事务批量 upsert；`tags` 存 JSON 文本（列 `tags_json`）。
-- 附带 `#[cfg(test)]`：用临时目录测试 upsert/list/remove/clear。
-
 ## 2. 元数据源
 
 ### 2.1 统一类型
@@ -130,8 +109,6 @@ export interface ProviderDetail extends ProviderCandidate {
 }
 ```
 
-Rust：直接返回 `crate::models::Candidate`（已含 `tags` 字段）；详情返回 `serde_json::Value`。
-
 ### 2.2 TMDB（电影 / 电视剧）
 
 Bun：`server/providers/tmdb.ts`
@@ -150,26 +127,6 @@ export async function tmdbDetail(
   apiKey: string,
   lang?: string
 ): Promise<ProviderDetail>
-```
-
-Rust 命令：
-
-```rust
-#[tauri::command]
-pub async fn tmdb_identify(
-  filename: String,
-  media_type: String,
-  api_key: String,
-  lang: Option<String>,
-) -> Result<Vec<Candidate>, String>;
-
-#[tauri::command]
-pub async fn tmdb_detail(
-  id: String,
-  media_type: String,
-  api_key: String,
-  lang: Option<String>,
-) -> Result<serde_json::Value, String>;
 ```
 
 规则：
@@ -208,16 +165,6 @@ export async function bangumiDetail(
 ): Promise<ProviderDetail>
 ```
 
-Rust 命令：
-
-```rust
-#[tauri::command]
-pub async fn bangumi_identify(filename: String) -> Result<Vec<Candidate>, String>;
-
-#[tauri::command]
-pub async fn bangumi_detail(id: String) -> Result<serde_json::Value, String>;
-```
-
 规则：
 
 - 搜索：`POST https://api.bgm.tv/v0/search/subjects?limit=10`
@@ -244,7 +191,6 @@ pub async fn bangumi_detail(id: String) -> Result<serde_json::Value, String>;
   - `POST /api/tmdb/detail` `{ id, mediaType, apiKey, lang? }` → detail
   - `POST /api/bangumi/identify` `{ filename, token? }` → `{ candidates }`
   - `POST /api/bangumi/detail` `{ id, token? }` → detail
-- Rust：在 `lib.rs` 注册 `library_*`、`tmdb_*`、`bangumi_*` 命令。
 - 前端：`native.ts` 增加对应方法。
 
 ## 4. 验收
@@ -252,4 +198,3 @@ pub async fn bangumi_detail(id: String) -> Result<serde_json::Value, String>;
 - Bun：`bun build server/library.ts --target=bun`、`bun build server/providers/tmdb.ts`、`bangumi.ts` 成功。
 - Bangumi 可用真实请求测试（无需 Key）。
 - TMDB 无 Key 必须报「未配置 TMDB API Key」；可用 mock 服务测试解析。
-- Rust：`cargo test --lib` 通过（library 测试 + 清洗/解析单元测试）。

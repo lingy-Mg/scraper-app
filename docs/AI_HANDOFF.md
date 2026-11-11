@@ -1,6 +1,6 @@
 # AI / 开发者交接文档
 
-> 更新时间：2026-11-10
+> 更新时间：2026-11-11
 > 配套阅读：[AGENTS.md](../AGENTS.md) · [ROADMAP.md](ROADMAP.md) · [bridge-contract.md](bridge-contract.md) · [providers-library-contract.md](providers-library-contract.md) · [javdb-app-api.md](javdb-app-api.md)
 
 ## 1. 产品定位与功能矩阵
@@ -9,74 +9,73 @@
 
 | 能力 | 状态 | 位置 |
 |---|---|---|
-| 目录扫描 / MP4 时长 / ffprobe 可选 | ✅ | `server/scan.ts`、`src-tauri/src/media.rs` |
-| 文件整理（移动/复制/冲突/跨卷/空目录） | ✅ | `server/files.ts`、`src-tauri/src/organize.rs` |
-| 回收站删除 | ✅ | `server/files.ts`、`src-tauri/src/system.rs` |
-| JavDB App API（番号/详情/演员/封面/磁力数据） | ✅ | `server/javdb.ts`、`src-tauri/src/javdb.rs` |
-| TMDB 电影 / 电视剧 | ✅ 需 Key | `server/providers/tmdb.ts`、`src-tauri/src/providers/tmdb.rs` |
-| Bangumi 动漫 | ✅ 可匿名 | `server/providers/bangumi.ts`、`src-tauri/src/providers/bangumi.rs` |
-| AI（OpenAI 兼容 / OpenCode CLI） | ✅ | `server/ai.ts`、`src-tauri/src/ai.rs` |
-| SQLite 媒体库 | ✅ | `server/library.ts`、`src-tauri/src/library.rs` |
+| 目录扫描 / MP4 时长 / ffprobe 可选 | ✅ | `server/scan.ts` |
+| 文件整理（移动/复制/冲突/跨卷/空目录） | ✅ | `server/files.ts` |
+| 回收站批量删除 | ✅ | `server/files.ts` |
+| JavDB App API（番号/详情/演员/封面/磁力数据） | ✅ | `server/javdb.ts` |
+| TMDB 电影 / 电视剧 | ✅ 需 Key | `server/providers/tmdb.ts` |
+| Bangumi 动漫 | ✅ 可匿名 | `server/providers/bangumi.ts` |
+| AI（OpenAI 兼容 / OpenCode CLI） | ✅ | `server/ai.ts` |
+| SQLite 媒体库 | ✅ | `server/library.ts` |
 | 默认隐藏短片 / 清理弹窗列表 | ✅ | `src/App.tsx` |
 | 底部日志默认显示 / 拖动高度 | ✅ | `src/components/LogPanel.tsx`、`src/App.tsx` |
-| NFO + 封面随整理写入 | ✅ | `server/files.ts`、`src-tauri/src/organize.rs`、`src/utils.ts` |
+| NFO + 封面随整理写入 | ✅ | `server/files.ts`、`src/utils.ts` |
+| 网页内目录选择器 | ✅ | `src/components/FolderPickerModal.tsx`、`server/index.ts` |
+| 单进程托管前端 + API | ✅ | `server/index.ts`、`scripts/start.mjs` |
 | 磁力链接 UI / 预告片 / 字幕下载 | ❌ | 见 ROADMAP |
-| 打包版 Bun 插件宿主（sidecar） | ❌ | 见 ROADMAP |
 
 ## 2. 进程与通道
 
-| 环境 | 前端模式 | 后端 |
+| 环境 | 前端 | 后端 |
 |---|---|---|
-| `npm run dev:tauri` | `tauri` | Tauri 原生命令；开发时同时有 Bun 插件宿主 |
-| `npm run dev` | `http` | Bun `127.0.0.1:5174` + Vite `5173` |
-| 直接打开静态页面 | `demo` | 只读演示，不写设置 |
+| `npm run dev` | Vite `127.0.0.1:5173`（热更） | Bun `127.0.0.1:5174`，Vite 代理 `/api`、`/plugins`、`/ws` |
+| `npm run start` | Bun 托管 `dist/` | 同一个 Bun `127.0.0.1:5174`，API + 插件 + 静态文件 |
 
-`src/native.ts` 在启动时用 `/api/info`（800ms）探测 HTTP；`window.__TAURI_INTERNALS__` 存在则优先 Tauri。
+纯 B/S 单端，浏览器访问同一源；`src/native.ts` 的 `native.mode` 恒为 `http`。
 
 ## 3. 文件地图
 
 ```
 src/
   App.tsx                     # 状态、流程、弹窗、媒体库同步、快捷键
-  native.ts                   # tauri/http/demo 三通道
+  native.ts                   # 同源 HTTP 封装（唯一后端通道）
   utils.ts                    # fmtDur/fmtSize/NFO/行转换/短片判定
   types.ts                    # 全部 DTO 与 Settings
   components/
     TitleBar/MenuBar/Toolbar/ModeBar/FilterBar/FileTable
     StatusBar/LogPanel/OrganizeModal/ConfigModal/AIConfigModal
     CandidateModal/PosterModal/PluginSettingsModal
+    FolderPickerModal         # 网页内目录选择
 server/
-  index.ts                    # Bun HTTP + /ws + 静态资源
+  index.ts                    # Bun HTTP + /ws + 插件资源 + dist 静态托管
   scan.ts / files.ts / settings.ts / ai.ts / library.ts / javdb.ts
   providers/{tmdb,bangumi,types}.ts
   plugins/{av,javdb,movie,tv,anime}/
   data/                       # 运行时（gitignore）
-src-tauri/src/
-  lib.rs                      # 命令注册
-  models.rs                   # 全部 serde DTO
-  media.rs / organize.rs / system.rs / settings.rs
-  ai.rs / javdb.rs / library.rs
-  providers/{tmdb,bangumi}.rs
+scripts/
+  dev.mjs                     # 开发：Bun watch + Vite
+  start.mjs                   # 生产：单进程启动 + 打开浏览器
 docs/                         # 契约与协议
-scripts/pack-desktop.ps1      # 单 exe 打包
 AGENTS.md
 ```
 
-## 4. 后端接口（必须三端一致）
+## 4. 后端接口（前端契约必须与 Bun 实现一致）
 
-Tauri 命令与 Bun HTTP 语义一致，详见 `src/native.ts` 与契约文档。
+所有能力都在 Bun HTTP 中实现，前端通过 `src/native.ts` 调用，详见契约文档。
 
-- 基础：`app_info`、`scan_folder`、`probe_file`、`pick_folder`
-- 文件：`organize_files`、`trash_files`、`open_path`、`reveal_path`
-- 设置：`load_settings`、`save_settings`
-- AI：`ai_test`、`ai_identify`、`ai_pick`
-- JavDB：`javdb_identify`、`javdb_detail`
-- TMDB：`tmdb_identify`、`tmdb_detail`
-- Bangumi：`bangumi_identify`、`bangumi_detail`
-- 媒体库：`library_list`、`library_upsert`、`library_remove`、`library_clear`
-- 窗口：`window_minimize`、`window_toggle_maximize`、`window_close`
+- 基础：`/api/info`、`/api/scan`、`/api/probe`
+- 文件系统：`/api/fs/roots`、`/api/fs/list`
+- 文件：`/api/organize`、`/api/trash`、`/api/open`、`/api/reveal`
+- 设置：`GET/PUT /api/settings`
+- AI：`/api/ai/test`、`/api/ai/identify`、`/api/ai/pick`
+- JavDB：`/api/javdb/identify`、`/api/javdb/detail`、`/api/javdb/search`
+- TMDB：`/api/tmdb/identify`、`/api/tmdb/detail`
+- Bangumi：`/api/bangumi/identify`、`/api/bangumi/detail`
+- 媒体库：`/api/library/{list,upsert,remove,clear}`
+- 封面：`/api/cover?url=...&x=&y=&width=&height=`
+- 插件：`/api/plugins*`、`/plugins/:id/settings/`、`/ws`
 
-HTTP 对应 `/api/...`；插件仍保留 `/api/plugins*`。
+目录选择不再弹系统对话框：前端弹窗通过 `/api/fs/*` 浏览真实路径。
 
 ## 5. 设置
 
@@ -96,10 +95,11 @@ interface Settings {
 
 `ModeConfig` 额外包含：`tmdbApiKey`、`tmdbLang`、`bangumiToken`（按模式保存）。
 
-存储位置：
+存储位置（开发与生产共用）：
 
-- 开发（Bun）：`server/data/settings.json`、`server/data/library.db`
-- 打包（Tauri）：`%APPDATA%\com.scraper.desktop\settings.json`、`library.db`
+- `server/data/settings.json`
+- `server/data/library.db`
+- `server/data/covers/`（封面缓存）
 
 ## 6. 媒体库表结构
 
@@ -134,9 +134,9 @@ CREATE TABLE items (
 - host：`jdforrepam.com` → `apidd.spthgb.com` → `apidd.czssdgz.com` → `javdb.com`
 - `duration` 是**分钟**，入 `Candidate.duration` / `Row.dur` 时 ×60
 - 有番号只接受唯一精确匹配；无番号默认返回空（AV/JavDB 只认番号），仅手动匹配传 `allowTitle=true` 才按标题搜索
-- Bun 串行限速 1.2s + 5 分钟缓存；Rust 顺序尝试 host
+- Bun 串行限速 1.2s + 5 分钟缓存；host 失败自动切换
 - 番号正则：2–6 位字母 + 可选分隔 + 2–5 位数字；排除 `QQ/IMG/VID/DSC/PXL/MVIMG/DCIM/AUDIO/VIDEO/SCREEN/SCREENSHOT/WECHAT`，且完整数字串超过 5 位直接拒绝（避免 `QQ20260818` 这类录屏名）
-- **封面**：CDN 响应可能是 XOR 包装（首字节 key，其余异或才是 JPEG/PNG）。前端不得直接加载远程图片；统一走 `cover_cache` / `cover_crop`（Rust）或 `/api/cover`（Bun，裁剪参数 `x/y/width/height`），返回本地缓存/data URL。
+- **封面**：CDN 响应可能是 XOR 包装（首字节 key，其余异或才是 JPEG/PNG）。前端不得直接加载远程图片；统一走 `/api/cover`（裁剪参数 `x/y/width/height`），由后端解码并返回本地缓存。
 - **封面默认不裁剪**：`cover_url` / DMM `pl.jpg` 是封底+封面拼接图，不同片商拼法不固定，因此不再自动裁右半。需要纯正面时，在详情弹窗点「手动裁剪」，拖动选框后应用；裁剪区域保存为 `posterCrop`，并随整理写入封面。
 - **纯正面小图**：`thumb_url` / DMM `ps.jpg` 是 147×200 的纯正面；高清源没有公开的纯正面原图。
 - **其它图片**：`preview_images` 是剧照（可能为空），`preview_video_url` 是 HLS 预告片，不是封面。
@@ -172,9 +172,7 @@ CREATE TABLE items (
 ### OpenCode CLI（AI 后端）
 
 - 前端服务商选 `OpenCode CLI`，模型填 `provider/model`，无需 API Key
-- 后端生成独立运行目录：
-  - Bun：`server/data/opencode-runner/`
-  - Rust：`%TEMP%\scraper-opencode-runner\`
+- 后端生成独立运行目录：`server/data/opencode-runner/`
   - 内含 `.opencode/agents/name-only.md` + `opencode.json`（禁用 title/summary）
 - 调用：`opencode run --standalone --agent name-only --model <model> --file prompt.txt go`
 - **stdin 必须 null/ignore**，否则 CLI 等待输入卡死
@@ -192,23 +190,16 @@ CREATE TABLE items (
 - **模式隔离**：`startScrape` 只处理 `row.mode === 当前模式` 或空模式的行
 - **识别优先级**：电影/电视剧/动漫 → 原生 provider；AV/JavDB → Bun 插件 → 原生 JavDB → AI
 - **NFO/封面**：整理时读取模式 `downloads` 配置；失败只写 warning，不影响主文件
-- **扫描进度**：扫描分 `walk`（枚举）→ `probe`（读时长）两阶段；Tauri 发 `scan-progress` 事件，HTTP 走 `/api/scan` 的 NDJSON 流；`src/components/ScanProgressBar.tsx` 显示进度与当前位置，`App.tsx` 每 200ms 批量把 `files` 合并进表格；扫描期间暂停媒体库落库
-- **文件名黑名单**：`Settings.blacklist` 按文件名（不含目录）屏蔽 BT 附带文件；不区分大小写，`*`/`?` 通配符，无通配符按包含匹配。三端各有一份实现（`src/utils.ts` 的 `isBlacklisted`、`server/scan.ts`、`src-tauri/src/media.rs`），改动必须同步。扫描时在 `walk` 阶段直接跳过；已加载的命中行从表格/计数/刮削/整理/清理中排除；右键行可拉黑，`BlacklistModal` 可增删规则。只隐藏，不删除文件
+- **扫描进度**：扫描分 `walk`（枚举）→ `probe`（读时长）两阶段；走 `/api/scan` 的 NDJSON 流；`src/components/ScanProgressBar.tsx` 显示进度与当前位置，`App.tsx` 每 200ms 批量把 `files` 合并进表格；扫描期间暂停媒体库落库
+- **文件名黑名单**：`Settings.blacklist` 按文件名（不含目录）屏蔽 BT 附带文件；不区分大小写，`*`/`?` 通配符，无通配符按包含匹配。两份实现（`src/utils.ts` 的 `isBlacklisted`、`server/scan.ts`），改动必须同步。扫描时在 `walk` 阶段直接跳过；已加载的命中行从表格/计数/刮削/整理/清理中排除；右键行可拉黑，`BlacklistModal` 可增删规则。只隐藏，不删除文件
+- **目录选择**：`native.pickFolder()` 打开 `FolderPickerModal`，通过 `/api/fs/roots` 与 `/api/fs/list` 浏览真实目录，不调用系统文件夹对话框。
 
 ## 9. 验证与测试
 
 ```powershell
 npx tsc --noEmit
 bun build server/index.ts --target=bun --outfile="$env:TEMP\server-check.js"
-cd src-tauri; cargo test --lib
-cd src-tauri; cargo check
-```
-
-Rust ignored 的真实测试：
-
-```powershell
-cd src-tauri; cargo test --lib live_identify_ssis_001 -- --ignored
-cd src-tauri; cargo test --lib opencode_cli_identifies_movie_number -- --ignored
+npm run build
 ```
 
 手工端到端：
@@ -224,21 +215,22 @@ cd src-tauri; cargo test --lib opencode_cli_identifies_movie_number -- --ignored
 9. 选一个大目录（数百个视频）：立刻出现进度条与当前文件，行数持续增长；进度到 100% 后表格排序稳定。
 10. 右键任意行「拉黑此文件名」：该行立即隐藏；`文件 → 文件名黑名单…` 里确认规则；重新扫描时该文件不再出现；媒体库记录会在下次 replace 扫描时清理。
 
-## 10. 打包（单 exe）
+## 10. 运行与交付（B/S 单端）
 
 ```powershell
-npm run pack:desktop
+npm run build   # tsc -b && vite build → dist/
+npm run start   # Bun 单进程托管 dist + API，并打开浏览器
 ```
 
-脚本执行 `tauri build --no-bundle`，只把 `src-tauri/target/release/app.exe`
-复制到桌面为 `刮削器.exe`。不生成 MSI/NSIS，不创建安装文件夹。
-
-要求 WebView2 Runtime（Win11 自带）。opencode CLI 功能需要 `opencode` 在 PATH 中。
+- 只有一个进程，只监听 `127.0.0.1:5174`；不生成 exe/安装包。
+- 开发用 `npm run dev`（Vite 5173 + Bun 5174 热更）。
+- opencode CLI 功能需要 `opencode` 在 PATH 中。
+- 不提交 `dist/`、`server/data/`、`node_modules/`。
 
 ## 11. 后续接手建议
 
 1. 先读 `docs/ROADMAP.md` 的待办与验收标准。
-2. 任何跨层改动先改契约文档，再改 Bun/Rust/前端。
+2. 任何接口改动先改契约文档，再改 Bun/前端。
 3. 不要删除 `server/plugins/*`：插件列表决定模式切换；`movie/tv/anime` 虽为占位，但被模式 UI 使用。
-4. 不要把测试数据、真实 Key、`server/data/` 提交或打包。
-5. 打包前跑完整 tsc + cargo test；UI 改动至少手工验证一次关键路径。
+4. 不要把测试数据、真实 Key、`server/data/` 提交到仓库。
+5. 提交前跑完整 `npx tsc --noEmit` + `bun build server/index.ts`；UI 改动至少手工验证一次关键路径。

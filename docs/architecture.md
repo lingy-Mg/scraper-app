@@ -6,14 +6,17 @@
 ## 1. 总体架构
 
 ```text
+浏览器 (Edge / Chrome)
+        │  http://127.0.0.1:5174
+        ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ Tauri Shell（后续）                                          │
+│ Bun 单进程                                                    │
 │                                                              │
 │  ┌────────────────────────────┐   ┌────────────────────────┐ │
-│  │ Host UI                    │   │ Bun Plugin Host        │ │
-│  │ React 18 + Ant Design 5    │◄─►│ 127.0.0.1:5174         │ │
-│  │                            │HTTP│                        │ │
-│  │  · 文件表格 / 任务 / 日志   │ WS │  · 插件注册 / 热重载    │ │
+│  │ Host UI（dist/ 静态文件）   │◄─►│ Bun API                │ │
+│  │ React 18 + Ant Design 5    │HTTP│ 127.0.0.1:5174         │ │
+│  │                            │ WS │                        │ │
+│  │  · 文件表格 / 任务 / 日志   │   │  · 插件注册 / 热重载    │ │
 │  │  · 模式切换                │   │  · 刮削脚本执行         │ │
 │  │  · iframe: 插件设置页       │   │  · AI 代理              │ │
 │  └────────────────────────────┘   │  · SQLite / 文件        │ │
@@ -32,15 +35,14 @@
 | 层 | 负责 | 不负责 |
 |---|---|---|
 | Host UI | 展示、交互、任务状态、iframe 容器 | 抓取、文件移动、AI 调用 |
-| Bun Host | 插件生命周期、刮削执行、AI 代理、HTTP/WS | 窗口、原生对话框 |
-| Tauri | 窗口、目录选择、ffprobe、回收站、进程托管 | 业务逻辑 |
+| Bun Host | 插件生命周期、刮削执行、AI 代理、HTTP/WS、静态文件 | 浏览器窗口控制 |
 | Plugin | 某个模式的识别/解析/整理规则 | 全局状态、权限决策 |
 
 ## 2. 进程模型
 
 - **Host UI**：Vite 开发时 `127.0.0.1:5173`；生产由 Bun 直接托管 `dist/`。
 - **Bun Host**：`bun server/index.ts`，默认 `127.0.0.1:5174`。只监听回环地址。
-- **Tauri**：生产环境把 Bun 作为 sidecar 启动，端口用 `PORT=0` 由系统分配，通过 stdout 回传。
+- 生产只有一个进程：`npm run start`（`scripts/start.mjs`）启动 Bun 并托管前端。
 - 开发时两个进程并行：`npm run dev`（`scripts/dev.mjs` 同时拉起 Bun 与 Vite）。
 
 Vite 代理：
@@ -272,7 +274,7 @@ interface AIConfig {
 安全：
 
 - API Key 只存本机，前端不回显。
-- 生产环境由 Bun/Tauri 代理请求，不从前端直连模型，避免 CORS 与密钥泄露。
+- 生产环境由 Bun 代理请求，不从前端直连模型，避免 CORS 与密钥泄露。
 - 发送给模型的只有文件名和候选元数据，不上传视频内容。
 
 ## 8. 数据模型
@@ -323,7 +325,7 @@ CREATE TABLE plugin_config (
 ## 9. 文件与整理
 
 - 时长读取：ffprobe（`format=duration`）。
-- 移动文件：优先 Tauri 的 `fs::rename`；跨盘时复制 + 校验 + 删除源文件。
+- 移动文件：优先 `fs.rename`；跨盘时复制 + 校验 + 删除源文件。
 - 删除：Windows 回收站（`send2trash` / `SHFileOperation`），不做不可恢复删除。
 - 冲突策略：跳过 / 覆盖 / 自动重命名（` (2)`）。
 - 整理前必须展示预览（当前 UI 已实现）。
@@ -341,15 +343,13 @@ npm run dev:ui       # 只启动前端
 生产：
 
 1. `npm run build` 生成 `dist/`。
-2. Bun 静态托管 `dist/`，同时提供 `/api` 与 `/plugins`。
-3. Tauri 打包：`bun build --compile server/index.ts --outfile scraper-host.exe`，
-   作为 sidecar 放进 `src-tauri/binaries/`。
-4. 插件目录放到用户数据目录：`%APPDATA%/scraper/plugins/`，首次启动复制内置插件。
+2. `npm run start` 启动单个 Bun 进程，静态托管 `dist/`，同时提供 `/api` 与 `/plugins`。
+3. 插件目录为 `server/plugins/`，改完自动热重载；不生成 exe/安装包。
 
 ## 11. 安全
 
 - Bun 只绑定 `127.0.0.1`，不暴露局域网。
-- 生产环境给 API 加一次性 token（Tauri 启动 Bun 时通过环境变量注入，前端从 `window.__HOST_TOKEN__` 读取）。
+- 服务只监听回环地址；如需额外鉴权，可通过环境变量注入一次性 token。
 - 插件设置 iframe 使用 `sandbox`，默认不允许顶层跳转。
 - 插件文件访问限定媒体库根目录。
 - 不执行来自网络的插件代码；安装插件需要用户显式确认。
@@ -366,6 +366,6 @@ npm run dev:ui       # 只启动前端
 |---|---|
 | P0（当前） | 插件宿主 + 4 个内置插件 + iframe 设置页 + 前端模式动态加载 |
 | P1 | 插件 Worker 隔离、权限清单、REST 任务流与 WS 进度 |
-| P2 | Tauri 包装、ffprobe、文件移动/回收站、SQLite |
+| P2 | B/S 单端、ffprobe、文件移动/回收站、SQLite |
 | P3 | 真实 AI 代理、候选评估、手动改选反馈 |
 | P4 | 插件市场（本地 zip 安装）、自动更新、插件签名 |

@@ -223,17 +223,10 @@ server/plugins/javdb/
 server/plugins/av/index.ts      // AV 模式复用同一客户端
 ```
 
-**Rust 侧（打包后的桌面应用）**
-
-```
-src-tauri/src/javdb.rs          // 同协议原生实现 + 单元测试（含 live 测试）
-命令：javdb_identify / javdb_detail
-```
-
 **前端**
 
-- `src/native.ts` 增加 `javdbIdentify` / `javdbDetail`，Tauri 走 `invoke`，HTTP 走 `/api/javdb/*`
-- 识别优先级：插件（Bun）→ 原生 JavDB（Tauri）→ AI/正则
+- `src/native.ts` 增加 `javdbIdentify` / `javdbDetail`，统一走 `/api/javdb/*`
+- 识别优先级：插件（Bun）→ JavDB → AI/正则
 - `Row` / `Candidate` 增加 `posterUrl / maker / actors / duration / score / detailId`
 - 整理时按模式配置写入 `<文件名>.nfo` 与 `<文件名>.jpg`
 
@@ -241,7 +234,6 @@ src-tauri/src/javdb.rs          // 同协议原生实现 + 单元测试（含 li
 
 ```
 插件 identify  SSIS-001.mp4 → 1 条精确候选，封面/演员/片商/评分齐全
-原生 identify  cargo test live_identify_ssis_001 → ok
 整理           目标目录生成 .mp4 + .nfo + .jpg（封面 157 KB）
 NFO            runtime=150、uniqueid=ZY5eq、thumb=封面 URL
 ```

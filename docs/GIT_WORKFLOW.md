@@ -24,7 +24,7 @@
 ```powershell
 npx tsc --noEmit
 bun build server/index.ts --target=bun --outfile="$env:TEMP\server-check.js"   # 改了 server/
-cargo check                                                                     # 改了 src-tauri/（如仍存在）
+npm run build                                                                   # 改了前端/构建配置
 ```
 
 纯文档/注释改动可跳过，但提交信息里要说明。
@@ -48,14 +48,14 @@ cargo check                                                                     
 - `chore` 构建、依赖、脚本、杂务
 - `build` 打包配置
 
-`scope` 用模块名：`scan` / `organize` / `library` / `plugin` / `javdb` / `ui` / `server` / `tauri`。
+`scope` 用模块名：`scan` / `organize` / `library` / `plugin` / `javdb` / `ui` / `server` / `build`。
 
 示例：
 
 ```
 feat(plugin): JavDB 刮削改为插件动态注册
 fix(scan): 跳过 .d.ts 避免被误判为 MPEG-TS
-refactor(server): 移除 Tauri 分支，只保留 HTTP 桥接
+refactor(native): 移除演示模式，桥接层只保留 HTTP
 ```
 
 ## 4. 绝对不要提交
@@ -63,7 +63,7 @@ refactor(server): 移除 Tauri 分支，只保留 HTTP 桥接
 已在 `.gitignore` 中，不要用 `git add -f` 绕过：
 
 - `server/data/` —— 含 AI Key、TMDB Key、Bangumi Token、媒体库、封面缓存
-- `node_modules/`、`dist/`、`src-tauri/target/`
+- `node_modules/`、`dist/`
 - 任何 `.env`、`*.pem`、`*.key`
 
 提交前自查：

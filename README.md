@@ -1,6 +1,6 @@
 # 刮削器（Scraper App）
 
-本地影片刮削器的桌面化前端原型，使用 **Vite + React 18 + TypeScript + Ant Design 5**。
+本地影片刮削与媒体库管理应用，纯 B/S 单端：Bun 一个进程同时提供 API、插件与前端静态文件，浏览器访问。前端使用 **Vite + React 18 + TypeScript + Ant Design 5**。
 
 ## 为什么选 Ant Design
 
@@ -9,23 +9,21 @@
 - `Table` 自带排序、行选择、固定列、虚拟滚动（配合 `scroll.y`）
 - `Modal` / `Menu` / `Select` / `InputNumber` / `Checkbox.Group` 开箱即用
 - `ConfigProvider` + `zh_CN` + `compactAlgorithm` 一行切换中文和紧凑密度
-- 中文文档完善，后续接 Tauri 时不需要换框架
+- 中文文档完善，后续扩展不需要更换 UI 框架
 
 ## 启动
 
 ```bash
 npm install
-npm run dev          # Bun 插件宿主 + Vite 前端（HTTP 模式）
-npm run dev:tauri    # Tauri 桌面窗口（原生模式，自动拉起 Bun + Vite）
-npm run dev:server   # 只启动插件宿主 http://127.0.0.1:5174
+npm run dev          # Bun API(5174) + Vite 前端(5173)，开发热更
+npm run dev:server   # 只启动 Bun 服务 http://127.0.0.1:5174
 npm run dev:ui       # 只启动前端 http://127.0.0.1:5173
-npm run build        # 类型检查 + 生产构建
-npm run pack:desktop # release 构建并复制单个 exe 到桌面
+npm run build        # 类型检查 + 生产构建（dist/）
+npm run start        # 单进程生产启动并打开浏览器
 ```
 
-> `npm run dev` 会同时拉起 `bun --watch server/index.ts` 和 Vite。
-> 单独启动前端时，插件宿主不可用，会自动回退到内置模式。
-> 生产构建的桌面应用直接使用 Tauri 原生命令，不依赖 Bun 进程。
+> `npm run dev` 会同时拉起 `bun --watch server/index.ts` 和 Vite，Vite 代理 `/api`、`/plugins`、`/ws`。
+> `npm run start` 由 Bun 同时托管 `dist/` 与 API，只监听 `127.0.0.1`。
 
 ## 目录
 
@@ -41,8 +39,8 @@ scraper-app/
 │     ├─ FilterBar / FileTable / StatusBar / LogPanel
 │     ├─ PluginSettingsModal # iframe 嵌入插件设置页
 │     └─ OrganizeModal / ConfigModal / AIConfigModal / CandidateModal
-├─ server/                  # Bun 插件宿主
-│  ├─ index.ts              # HTTP + WS + 静态资源
+├─ server/                  # Bun 单进程后端
+│  ├─ index.ts              # HTTP + WS + 插件资源 + dist 静态托管
 │  ├─ registry.ts           # 插件发现 / 热重载 / 配置持久化
 │  ├─ javdb.ts              # JavDB App API 客户端（签名/搜索/详情/磁力）
 │  ├─ library.ts            # SQLite 媒体库
@@ -54,6 +52,7 @@ scraper-app/
 │     ├─ javdb/{plugin.json,index.ts}
 │     ├─ movie/…  tv/…  anime/…
 │     └─ _shared/{simple.ts,settings.html}
+├─ scripts/                 # dev.mjs（Vite + Bun）/ start.mjs（单进程生产）
 ├─ docs/architecture.md     # 完整架构设计
 └─ package.json
 ```
@@ -103,17 +102,17 @@ plugin:close  →  关闭弹窗
 
 ## 已实现（真实后端）
 
-### 原生能力（Tauri / Rust）
+### 后端能力（Bun）
 
 - 目录扫描：递归、跳过隐藏目录、视频扩展名过滤、单文件探测
 - 时长读取：MP4/MOV 直接解析 `moov/mvhd`（不依赖外部程序），其余交给 ffprobe；找不到 ffprobe 时自动降级
 - 视频元数据：ffprobe 同时读取宽高与编码
 - 文件整理：移动 / 复制、目标越界校验、`跳过 / 覆盖 / 自动重命名` 冲突策略、跨卷复制校验、清理空源目录
-- 删除：系统回收站（`trash`），失败逐项返回原因
+- 删除：系统回收站；单 PowerShell 进程批量处理，失败自动逐条回退并返回原因
 - 打开文件 / 在资源管理器中定位
-- 窗口：自定义标题栏（拖动、双击最大化、最小化、最大化、关闭）
-- 设置持久化：`%APPDATA%/com.scraper.desktop/settings.json`，原子写入
-- AI 代理：`reqwest` 直连 OpenAI 兼容接口，Key 只在本机，不经浏览器
+- 网页内目录选择器：`/api/fs/roots`、`/api/fs/list` 浏览真实路径，不调用系统对话框
+- 设置持久化：`server/data/settings.json`，原子写入
+- AI 代理：后端直连 OpenAI 兼容接口，Key 只在本机，不经浏览器
 
 ### 刮削流程
 
@@ -145,13 +144,12 @@ plugin:close  →  关闭弹窗
 - 模型返回 JSON 解析失败、超时、非 2xx 时按配置回退本地正则
 - 多候选择优返回 `{pick, confidence, reason}`，低于阈值不替用户决定
 
-### 双通道与降级
+### 运行方式
 
 | 环境 | 走法 | 说明 |
 |---|---|---|
-| Tauri 桌面 | `invoke` 原生命令 | 全功能 |
-| `npm run dev` 网页 | Bun `/api/*` | 除「选择文件夹」外全功能（浏览器无法弹原生目录框） |
-| 纯静态打开 | 演示模式 | 显式横幅提示，原生操作不可用，不写设置 |
+| `npm run dev` | Vite 5173 → 代理 Bun 5174 | 开发热更，全功能 |
+| `npm run start` | Bun 5174 同源托管 dist + API | 生产单进程，全功能 |
 
 ### 快捷键
 
@@ -159,25 +157,24 @@ plugin:close  →  关闭弹窗
 
 ## 已知边界
 
-- **ffprobe 为可选依赖**：未安装时 MP4/MOV 用内置解析，其他容器时长为空。把 `ffprobe.exe` 放到 `src-tauri/binaries/` 或 PATH 即可启用。
+- **ffprobe 为可选依赖**：未安装时 MP4/MOV 用内置解析，其他容器时长为空。把 `ffprobe.exe` 放到项目 `binaries/` 或 PATH 即可启用。
 - **TMDB 需要 API Key**：在「配置…」中填写 v3 Key 或 v4 Token；未填写时电影/电视剧会明确提示，不会静默失败。
 - **Bangumi 可匿名**：Token 可选，只影响限额。
-- **打包后不启动 Bun 插件宿主**：安装包使用「内置模式 + 原生 TMDB / Bangumi / JavDB + 原生 AI」，四个内置模式都能刮削；自定义插件模式请在 `npm run dev` 下使用，或后续把 Bun 编译为 sidecar 打进安装包。
-- **JavDB 签名随 App 版本变化**：常量对应 App 1.9.28，失效时更新 `server/javdb.ts` 与 `src-tauri/src/javdb.rs` 即可。
+- **单进程运行**：`npm run start` 启动后 Bun 常驻；自定义插件从 `server/plugins/` 动态加载，支持热重载。
+- **JavDB 签名随 App 版本变化**：常量对应 App 1.9.28，失效时更新 `server/javdb.ts` 即可。
 - **未实现**：磁力链接下载、预告片/字幕下载、媒体库跨设备同步。
 - **AI Key 仅本机**：保存在设置文件中，不会上传；界面上按密码框显示。
 
-## 打包（单 exe）
+## 运行与交付
 
 ```powershell
-npm run pack:desktop
+npm run build   # 生成 dist/
+npm run start   # Bun 单进程托管 dist + API，并打开 http://127.0.0.1:5174
 ```
 
-- 执行 `tauri build --no-bundle`，不生成 MSI/NSIS 安装包
-- 只把 `src-tauri/target/release/app.exe` 复制为桌面的 `刮削器.exe`
-- 需要 WebView2 Runtime（Win10 需安装，Win11 自带）
+- 不生成 exe/安装包；服务只监听 `127.0.0.1`
 - OpenCode CLI 功能要求 `opencode` 在 PATH 中
 
 ## 接口契约
 
-前端、Tauri、Bun 三方的字段与命令约定见 [docs/bridge-contract.md](docs/bridge-contract.md)，媒体库与 TMDB/Bangumi 的接口见 [docs/providers-library-contract.md](docs/providers-library-contract.md)。后续开发请看 [AGENTS.md](AGENTS.md) 与 [docs/AI_HANDOFF.md](docs/AI_HANDOFF.md)。
+前端与 Bun 的字段和接口约定见 [docs/bridge-contract.md](docs/bridge-contract.md)，媒体库与 TMDB/Bangumi 的接口见 [docs/providers-library-contract.md](docs/providers-library-contract.md)。后续开发请看 [AGENTS.md](AGENTS.md) 与 [docs/AI_HANDOFF.md](docs/AI_HANDOFF.md)。
