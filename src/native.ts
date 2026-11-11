@@ -223,7 +223,8 @@ export interface NativeBridge {
     id: string,
     mediaType: 'movie' | 'tv',
     apiKey: string,
-    lang?: string
+    lang?: string,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown>>
   bangumiIdentify(filename: string, token?: string, signal?: AbortSignal): Promise<Candidate[]>
   bangumiDetail(id: string, token?: string): Promise<Record<string, unknown>>
@@ -414,9 +415,10 @@ export const native: NativeBridge = {
     return data.candidates ?? []
   },
 
-  tmdbDetail(id, mediaType, apiKey, lang) {
+  tmdbDetail(id, mediaType, apiKey, lang, signal) {
     return http<Record<string, unknown>>(`/api/plugins/${mediaType}/resolve`, {
-      body: { candidateId: id, options: { apiKey, lang, mediaType } }
+      body: { candidateId: id, options: { apiKey, lang, mediaType } },
+      signal
     })
   },
 

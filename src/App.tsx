@@ -1379,28 +1379,6 @@ export default function ScraperApp() {
     const wantCover = mode.downloads.some((item) => item.on && item.label === '封面')
     const wantTrailer = mode.downloads.some((item) => item.on && item.label === '预告片')
 
-    // 预告片只存 URL 并写进 NFO；NFO 关闭时无需拉取。
-    const trailerByUid = new Map<number, string>()
-    if (wantTrailer && wantNfo) {
-      await Promise.all(
-        done.map(async (row) => {
-          if (row.trailerUrl) {
-            trailerByUid.set(row.uid, row.trailerUrl)
-            return
-          }
-          if (!trailerKindOf(row) || !row.detailId) return
-          try {
-            const trailer = await fetchTrailer(row)
-            if (!trailer.trailerUrl) return
-            trailerByUid.set(row.uid, trailer.trailerUrl)
-            patchRow(row.uid, trailer)
-          } catch (error) {
-            pushLog('warn', `预告片获取失败：${row.file} · ${errText(error)}`)
-          }
-        })
-      )
-    }
-
     const items = done
       .map((row) => ({
         row,
@@ -1409,7 +1387,7 @@ export default function ScraperApp() {
         nfo: wantNfo ? buildNfo(row, mode.name) : undefined,
         posterUrl: wantCover ? row.posterUrl : undefined,
         posterCrop: wantCover ? row.posterCrop : undefined,
-        trailerUrl: wantTrailer ? row.trailerUrl || trailerByUid.get(row.uid) : undefined
+        trailerUrl: wantTrailer ? row.trailerUrl : undefined
       }))
       .filter((item) => Boolean(item.source))
 
@@ -1430,6 +1408,22 @@ export default function ScraperApp() {
     const queue = new TaskQueue(
       items,
       async (item, signal) => {
+        // 预告片只存 URL 并写进 NFO；NFO 关闭时无需拉取。
+        // 放进任务内执行，暂停/取消时与整理条目一起中断。
+        let trailerUrl = item.trailerUrl
+        if (wantTrailer && wantNfo && !trailerUrl) {
+          try {
+            const trailer = await fetchTrailer(item.row, signal)
+            if (trailer.trailerUrl) {
+              trailerUrl = trailer.trailerUrl
+              patchRow(item.row.uid, trailer)
+            }
+          } catch (error) {
+            if (signal.aborted || isAbortError(error)) throw error
+            pushLog('warn', `预告片获取失败：${item.row.file} · ${errText(error)}`)
+          }
+        }
+
         const results = await native.organize(
           {
             dest: options.dest,
@@ -1444,7 +1438,7 @@ export default function ScraperApp() {
                 nfo: item.nfo,
                 posterUrl: item.posterUrl,
                 posterCrop: item.posterCrop,
-                trailerUrl: item.trailerUrl
+                trailerUrl
               }
             ]
           },
@@ -1648,14 +1642,21 @@ export default function ScraperApp() {
 
   /** 从插件详情补拉 trailerUrl；失败只写日志，不影响详情其它内容。 */
   const fetchTrailer = async (
-    row: Row
+    row: Row,
+    signal?: AbortSignal
   ): Promise<{ trailerUrl?: string; trailerSite?: string }> => {
     const kind = trailerKindOf(row)
     if (!kind || !row.detailId) return {}
     const config = modes[kind] ?? mode
     const apiKey = (config?.tmdbApiKey || '').trim()
     if (!apiKey) return {}
-    const detail = await native.tmdbDetail(row.detailId, kind, apiKey, config?.tmdbLang)
+    const detail = await native.tmdbDetail(
+      row.detailId,
+      kind,
+      apiKey,
+      config?.tmdbLang,
+      signal
+    )
     return {
       trailerUrl:
         typeof detail.trailerUrl === 'string' && detail.trailerUrl
