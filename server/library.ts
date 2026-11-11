@@ -230,6 +230,13 @@ function rowToItem(row: ItemRow): LibraryItem {
   return item
 }
 
+/** 关闭数据库句柄（测试清理临时目录、或需要重置连接时使用）。 */
+export function closeLibrary(): void {
+  if (!db) return
+  db.close()
+  db = null
+}
+
 /** 读取全部条目，按更新时间倒序。 */
 export function listItems(): LibraryItem[] {
   const rows = getDb().query<ItemRow, []>(SELECT_SQL).all()
