@@ -271,14 +271,16 @@ export const native: NativeBridge = {
   },
 
   async javdbIdentify(filename, allowTitle = false) {
-    const data = await http<{ candidates: Candidate[] }>('/api/javdb/identify', {
+    const data = await http<{ candidates: Candidate[] }>('/api/plugins/javdb/identify', {
       body: { filename, allowTitle }
     })
     return data.candidates ?? []
   },
 
   javdbDetail(id) {
-    return http<Record<string, unknown>>('/api/javdb/detail', { body: { id } })
+    return http<Record<string, unknown>>('/api/plugins/javdb/resolve', {
+      body: { candidateId: id }
+    })
   },
 
   async libraryList() {
@@ -302,27 +304,29 @@ export const native: NativeBridge = {
   },
 
   async tmdbIdentify(filename, mediaType, apiKey, lang) {
-    const data = await http<{ candidates: Candidate[] }>('/api/tmdb/identify', {
-      body: { filename, mediaType, apiKey, lang }
+    const data = await http<{ candidates: Candidate[] }>(`/api/plugins/${mediaType}/identify`, {
+      body: { filename, options: { apiKey, lang, mediaType } }
     })
     return data.candidates ?? []
   },
 
   tmdbDetail(id, mediaType, apiKey, lang) {
-    return http<Record<string, unknown>>('/api/tmdb/detail', {
-      body: { id, mediaType, apiKey, lang }
+    return http<Record<string, unknown>>(`/api/plugins/${mediaType}/resolve`, {
+      body: { candidateId: id, options: { apiKey, lang, mediaType } }
     })
   },
 
   async bangumiIdentify(filename, token) {
-    const data = await http<{ candidates: Candidate[] }>('/api/bangumi/identify', {
-      body: { filename, token }
+    const data = await http<{ candidates: Candidate[] }>('/api/plugins/anime/identify', {
+      body: { filename, options: { token } }
     })
     return data.candidates ?? []
   },
 
   bangumiDetail(id, token) {
-    return http<Record<string, unknown>>('/api/bangumi/detail', { body: { id, token } })
+    return http<Record<string, unknown>>('/api/plugins/anime/resolve', {
+      body: { candidateId: id, options: { token } }
+    })
   },
 
   async coverSrc(url) {
