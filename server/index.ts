@@ -43,6 +43,10 @@ import {
 const PORT = Number(process.env.PORT ?? 5174)
 const HOST = '127.0.0.1'
 const VERSION = '0.1.0'
+const DIST_DIR = resolve(import.meta.dir, '..', 'dist')
+/** 生产启动（scripts/start.mjs）时托管 dist；开发时由 Vite 提供前端。 */
+const SERVE_DIST =
+  process.env.SCRAPER_SERVE_DIST === '1' || process.env.NODE_ENV === 'production'
 
 await loadOverrides()
 await loadAll()
@@ -752,7 +756,42 @@ async function servePluginAsset(url: URL) {
   return new Response(file, { headers: { 'cache-control': 'no-store' } })
 }
 
-const server = Bun.serve({
+/** 托管 dist：静态文件优先，未知路径回退 index.html（SPA）。 */
+async function serveStatic(url: URL): Promise<Response> {
+  let pathname: string
+  try {
+    pathname = decodeURIComponent(url.pathname)
+  } catch {
+    return new Response('bad request', { status: 400 })
+  }
+
+  const rel = pathname.replace(/^\/+/, '')
+  const full = resolve(DIST_DIR, rel)
+  if (full !== DIST_DIR && !full.startsWith(DIST_DIR + sep)) {
+    return new Response('forbidden', { status: 403 })
+  }
+
+  if (rel) {
+    const file = Bun.file(full)
+    if (await file.exists()) {
+      return new Response(file, {
+        headers: {
+          'cache-control': rel.startsWith('assets/')
+            ? 'public, max-age=31536000, immutable'
+            : 'no-store'
+        }
+      })
+    }
+  }
+
+  const index = Bun.file(join(DIST_DIR, 'index.html'))
+  if (await index.exists()) {
+    return new Response(index, { headers: { 'cache-control': 'no-store' } })
+  }
+  return new Response('前端尚未构建，请先运行 npm run build', { status: 404 })
+}
+
+export const server = Bun.serve({
   port: PORT,
   hostname: HOST,
   async fetch(req, srv) {
@@ -766,6 +805,9 @@ const server = Bun.serve({
       }
       if (url.pathname.startsWith('/api/')) return await handleApi(req, url)
       if (url.pathname.startsWith('/plugins/')) return await servePluginAsset(url)
+      if (SERVE_DIST && (req.method === 'GET' || req.method === 'HEAD')) {
+        return await serveStatic(url)
+      }
       return json({
         ok: true,
         service: 'scraper-plugin-host',
