@@ -35,7 +35,7 @@ export interface PluginContext {
   /** 前端保存的该模式配置快照（`settings.modes[id]`），含密钥。 */
   modeConfig?: Record<string, unknown>
   /** 共享 AI 服务；AI 不是刮削站，由宿主注入。 */
-  ai?: {
+  ai: {
     identify(filename: string, overrides?: Record<string, unknown>): Promise<unknown>
     pick(filename: string, candidates: unknown[], overrides?: Record<string, unknown>): Promise<unknown>
   }

@@ -230,6 +230,24 @@ function requirePlugin(id: string) {
   return plugin
 }
 
+/**
+ * AI 是通用回退引擎，不是刮削站：作为共享服务注入插件上下文。
+ * 插件可通过 `ctx.ai.identify()` / `ctx.ai.pick()` 调用，也可自行覆盖配置。
+ */
+async function pluginAi() {
+  const settings = await loadSettings()
+  return {
+    identify: (filename: string, overrides?: Record<string, unknown>) =>
+      aiIdentify({ ...settings.ai, ...(overrides as Partial<AIConfig> | undefined) }, filename),
+    pick: (filename: string, candidates: unknown[], overrides?: Record<string, unknown>) =>
+      aiPick(
+        { ...settings.ai, ...(overrides as Partial<AIConfig> | undefined) },
+        filename,
+        candidates as Candidate[]
+      )
+  }
+}
+
 async function identifyPlugin(
   id: string,
   filename: string,
@@ -239,7 +257,15 @@ async function identifyPlugin(
   const plugin = requirePlugin(id)
   if (typeof plugin.impl?.identify !== 'function') throw new Error('插件未实现 identify')
   const modeConfig = await loadModeConfig(id)
-  return plugin.impl.identify({ filename, allowTitle, config: plugin.config, options, modeConfig })
+  const ai = await pluginAi()
+  return plugin.impl.identify({
+    filename,
+    allowTitle,
+    config: plugin.config,
+    options,
+    modeConfig,
+    ai
+  })
 }
 
 async function resolvePlugin(
@@ -250,7 +276,8 @@ async function resolvePlugin(
   const plugin = requirePlugin(id)
   if (typeof plugin.impl?.resolve !== 'function') throw new Error('插件未实现 resolve')
   const modeConfig = await loadModeConfig(id)
-  return plugin.impl.resolve({ config: plugin.config, options, modeConfig }, candidateId)
+  const ai = await pluginAi()
+  return plugin.impl.resolve({ config: plugin.config, options, modeConfig, ai }, candidateId)
 }
 
 async function handlePlugins(req: Request, url: URL, parts: string[]) {
