@@ -1,4 +1,4 @@
-import { readdir, readFile, stat, writeFile, mkdir } from 'node:fs/promises'
+import { readdir, readFile, stat, writeFile, mkdir, unlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -75,6 +75,10 @@ export interface LoadedPlugin {
 
 const plugins = new Map<string, LoadedPlugin>()
 const overrides = new Map<string, Partial<PluginConfig>>()
+/** 每个插件当前正在使用的打包产物（id-source → 文件路径），清理时绝不删除。 */
+const activeBundles = new Map<string, string>()
+/** 每个插件保留的打包产物数量（按修改时间最新优先）。 */
+const CACHE_KEEP = 2
 let generation = 0
 let reloadListener: ((id: string) => void) | null = null
 
@@ -159,7 +163,10 @@ async function bundlePlugin(
   // 同名内置/用户插件必须使用不同缓存文件，否则会加载到错误的实现。
   const base = `${id}-${source}-${hash}`
   const outfile = join(CACHE_DIR, `${base}.mjs`)
-  if (existsSync(outfile)) return outfile
+  if (existsSync(outfile)) {
+    activeBundles.set(`${id}-${source}`, outfile)
+    return outfile
+  }
 
   await mkdir(CACHE_DIR, { recursive: true })
   const result = await Bun.build({
@@ -181,7 +188,54 @@ async function bundlePlugin(
 
   const output = result.outputs[0]
   if (!output) throw new Error('插件打包没有输出文件')
+  activeBundles.set(`${id}-${source}`, output.path)
   return output.path
+}
+
+/**
+ * 每个插件只保留最新 2 个打包产物，避免 `.plugin-cache` 无限增长。
+ * 正在使用的产物（activeBundles）无论新旧都不会删除。
+ */
+async function prunePluginCache(): Promise<void> {
+  let entries
+  try {
+    entries = await readdir(CACHE_DIR, { withFileTypes: true })
+  } catch {
+    return
+  }
+
+  const groups = new Map<string, { path: string; name: string; mtime: number }[]>()
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.mjs')) continue
+    const match = entry.name.match(/^(.*-(?:builtin|user))-[0-9a-f]{12}\.mjs$/)
+    if (!match) continue
+    const path = join(CACHE_DIR, entry.name)
+    let info
+    try {
+      info = await stat(path)
+    } catch {
+      continue
+    }
+    const list = groups.get(match[1]) ?? []
+    list.push({ path, name: entry.name, mtime: info.mtimeMs })
+    groups.set(match[1], list)
+  }
+
+  for (const [prefix, items] of groups) {
+    items.sort((a, b) => b.mtime - a.mtime)
+    const keep = new Set(items.slice(0, CACHE_KEEP).map((item) => item.path))
+    const active = activeBundles.get(prefix)
+    if (active) keep.add(active)
+    for (const item of items) {
+      if (keep.has(item.path)) continue
+      try {
+        await unlink(item.path)
+        console.log(`[plugin] 清理缓存 ${item.name}`)
+      } catch {
+        // 文件仍被占用时跳过，下次加载/重载再试
+      }
+    }
+  }
 }
 
 /** 用户目录优先；不存在时回退内置目录。 */
@@ -267,6 +321,7 @@ export async function loadAll() {
       await loadOne(entry.name, { dir: join(root, entry.name), source })
     }
   }
+  await prunePluginCache()
 }
 
 export function getPlugins() {
@@ -290,6 +345,7 @@ export async function updateConfig(id: string, patch: Partial<PluginConfig>) {
 
 export async function reload(id: string) {
   const plugin = await loadOne(id, findPluginDir(id) ?? undefined)
+  await prunePluginCache()
   reloadListener?.(id)
   return plugin
 }
@@ -318,6 +374,7 @@ export function watchPlugins() {
           return
         }
         await loadOne(id, findPluginDir(id) ?? undefined)
+        await prunePluginCache()
         reloadListener?.(id)
         console.log(`[plugin] reloaded ${id}`)
       }, 320)
