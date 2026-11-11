@@ -15,17 +15,25 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dataDir = resolve(process.env.SCRAPER_DATA_DIR?.trim() || join(root, '.tmp', 'e2e-data'))
+const tempDir = resolve(root, '.tmp', 'e2e-tmp')
 const port = process.env.PORT?.trim() || '5180'
 
 rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 mkdirSync(dataDir, { recursive: true })
+// Windows 上 esbuild 清理系统 TEMP 偶发 Access denied，构建期改用项目内临时目录。
+rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+mkdirSync(tempDir, { recursive: true })
+process.env.TEMP = tempDir
+process.env.TMP = tempDir
+process.env.TMPDIR = tempDir
 
 console.log(`[e2e] 隔离数据目录：${dataDir}`)
 console.log('[e2e] 构建前端 …')
 const build = spawnSync('npm run build', {
   cwd: root,
   shell: true,
-  stdio: 'inherit'
+  stdio: 'inherit',
+  env: { ...process.env, TEMP: tempDir, TMP: tempDir, TMPDIR: tempDir }
 })
 if (build.error) {
   console.error(`[e2e] 无法启动构建：${build.error.message}`)
