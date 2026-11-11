@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 
 /** 测试媒体目录与临时数据都放在项目内 `.tmp/`，不触碰真实 `data/` 与用户目录。 */
 export const TMP_ROOT = resolve(process.cwd(), '.tmp')
@@ -102,6 +102,9 @@ export async function openFolderPicker(page: Page) {
   await page.getByRole('button', { name: /选择文件夹/ }).click()
   const modal = page.locator('.ant-modal-content', { hasText: '选择扫描目录' })
   await expect(modal).toBeVisible()
+  // 打开时会异步读取盘符并浏览初始目录；等它结束，避免稍后的输入被覆盖。
+  await expect(modal.locator('.fpm-state')).toHaveCount(0)
+  await expect(modal.locator('.fpm-roots .fpm-root')).not.toHaveCount(0)
   return modal
 }
 
@@ -109,7 +112,7 @@ export async function openFolderPicker(page: Page) {
 export async function pickFolderByPath(page: Page, path: string): Promise<void> {
   const modal = await openFolderPicker(page)
   await modal.getByPlaceholder(/输入绝对路径/).fill(path)
-  await modal.getByRole('button', { name: '跳转' }).click()
+  await modal.getByRole('button', { name: /跳\s*转/ }).click()
   await expect(modal.locator('.fpm-target code')).toHaveText(path)
   await modal.getByRole('button', { name: '选择此文件夹' }).click()
   await expect(modal).toBeHidden()
@@ -127,8 +130,17 @@ export async function installScanbarObserver(page: Page): Promise<void> {
     const win = window as unknown as { __scanbarSeen?: boolean }
     win.__scanbarSeen = false
     const start = () => {
-      const observer = new MutationObserver(() => {
+      const observer = new MutationObserver((records) => {
         if (document.querySelector('.scanbar')) win.__scanbarSeen = true
+        // 极快的扫描可能在同一个微任务内挂载又卸载；直接检查新增节点。
+        for (const record of records) {
+          for (const node of Array.from(record.addedNodes)) {
+            if (!(node instanceof Element)) continue
+            if (node.matches('.scanbar') || node.querySelector('.scanbar')) {
+              win.__scanbarSeen = true
+            }
+          }
+        }
       })
       observer.observe(document.documentElement, { childList: true, subtree: true })
       if (document.querySelector('.scanbar')) win.__scanbarSeen = true
@@ -153,7 +165,9 @@ export function makeMediaDir(name: string, files: string[]): string {
   rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   mkdirSync(dir, { recursive: true })
   for (const file of files) {
-    writeFileSync(resolve(dir, file), `e2e fixture: ${file}\n`)
+    const full = resolve(dir, file)
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, `e2e fixture: ${file}\n`)
   }
   return dir
 }
