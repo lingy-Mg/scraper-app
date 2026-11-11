@@ -6,10 +6,15 @@ import type {
   AppInfo,
   Candidate,
   CropRect,
+  DuplicateGroup,
   FsListing,
   FsRoot,
   LibraryItem,
+  LibraryQuery,
+  LibraryQueryResult,
+  LibraryStats,
   MediaFile,
+  MediaSource,
   NativeMode,
   OrganizeRequest,
   OrganizeResult,
@@ -186,9 +191,15 @@ export interface NativeBridge {
   coverSrc(url: string): Promise<string>
   coverCrop(url: string, crop: CropRect): Promise<string>
   libraryList(): Promise<LibraryItem[]>
+  libraryQuery(options: LibraryQuery): Promise<LibraryQueryResult>
+  libraryDuplicates(mode?: string): Promise<DuplicateGroup[]>
+  libraryStats(mode?: string): Promise<LibraryStats>
   libraryUpsert(items: LibraryItem[]): Promise<number>
   libraryRemove(paths: string[]): Promise<number>
   libraryClear(mode?: string): Promise<number>
+  listSources(): Promise<MediaSource[]>
+  addSource(path: string, name?: string): Promise<MediaSource[]>
+  removeSource(path: string): Promise<MediaSource[]>
   tmdbIdentify(
     filename: string,
     mediaType: 'movie' | 'tv',
@@ -297,6 +308,39 @@ export const native: NativeBridge = {
     return data.items ?? []
   },
 
+  libraryQuery(options) {
+    const params = new URLSearchParams()
+    const fields: (keyof LibraryQuery)[] = [
+      'q',
+      'mode',
+      'maker',
+      'actor',
+      'tag',
+      'status',
+      'sort',
+      'order'
+    ]
+    for (const field of fields) {
+      const value = options[field]
+      if (value !== undefined && value !== '') params.set(field, String(value))
+    }
+    if (options.limit !== undefined) params.set('limit', String(options.limit))
+    if (options.offset !== undefined) params.set('offset', String(options.offset))
+    const query = params.toString()
+    return http<LibraryQueryResult>(`/api/library/query${query ? `?${query}` : ''}`)
+  },
+
+  async libraryDuplicates(mode) {
+    const query = mode ? `?mode=${encodeURIComponent(mode)}` : ''
+    const data = await http<{ groups: DuplicateGroup[] }>(`/api/library/duplicates${query}`)
+    return data.groups ?? []
+  },
+
+  libraryStats(mode) {
+    const query = mode ? `?mode=${encodeURIComponent(mode)}` : ''
+    return http<LibraryStats>(`/api/library/stats${query}`)
+  },
+
   async libraryUpsert(items) {
     const data = await http<{ count: number }>('/api/library/upsert', { body: { items } })
     return data.count ?? 0
@@ -310,6 +354,26 @@ export const native: NativeBridge = {
   async libraryClear(mode) {
     const data = await http<{ count: number }>('/api/library/clear', { body: { mode } })
     return data.count ?? 0
+  },
+
+  async listSources() {
+    const data = await http<{ sources: MediaSource[] }>('/api/sources')
+    return data.sources ?? []
+  },
+
+  async addSource(path, name) {
+    const data = await http<{ sources: MediaSource[] }>('/api/sources', {
+      body: { path, name }
+    })
+    return data.sources ?? []
+  },
+
+  async removeSource(path) {
+    const data = await http<{ sources: MediaSource[] }>(
+      `/api/sources?path=${encodeURIComponent(path)}`,
+      { method: 'DELETE' }
+    )
+    return data.sources ?? []
   },
 
   async tmdbIdentify(filename, mediaType, apiKey, lang) {

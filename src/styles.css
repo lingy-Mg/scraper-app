@@ -1143,3 +1143,160 @@ button {
   display: flex;
   gap: 8px;
 }
+
+/* 媒体库面板 */
+.lib-tabbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.lib-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.lib-file {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.lib-mono {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.lib-section {
+  margin-top: 16px;
+}
+.lib-section-title {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.lib-stat-cards {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.lib-stat-card {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #fbfbfc;
+}
+.lib-stat-card .label {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.lib-stat-card .value {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.lib-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.lib-count-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 11.5px;
+  border-bottom: 1px dashed var(--line-2);
+}
+.lib-count-row:last-child {
+  border-bottom: 0;
+}
+.lib-empty {
+  padding: 28px 0;
+}
+.lib-dup-group {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.lib-dup-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #f7f8fa;
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+}
+.lib-dup-key {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.lib-dup-items {
+  padding: 4px 0;
+}
+.lib-dup-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+}
+.lib-dup-item.keep {
+  background: #f2fbf5;
+}
+.lib-dup-keep {
+  flex: none;
+  width: 58px;
+  color: var(--green);
+  font-size: 10.5px;
+}
+.lib-dup-file {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-dup-meta {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.lib-source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+.lib-source-main {
+  flex: 1;
+  min-width: 0;
+}
+.lib-source-name {
+  font-size: 12px;
+  font-weight: 500;
+}
+.lib-source-path {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-bottom: 8px;
+}

@@ -19,6 +19,7 @@ import PosterModal from './components/PosterModal'
 import CoverCropModal from './components/CoverCropModal'
 import BlacklistModal from './components/BlacklistModal'
 import FolderPickerModal from './components/FolderPickerModal'
+import LibraryModal from './components/LibraryModal'
 import { INITIAL_AI, INITIAL_MODES } from './data'
 import {
   fetchPlugins,
@@ -35,6 +36,7 @@ import type {
   Candidate,
   CropRect,
   FilterKey,
+  LibraryItem,
   LogLine,
   Magnet,
   MediaFile,
@@ -189,6 +191,7 @@ export default function ScraperApp() {
   const [aiOpen, setAiOpen] = useState(false)
   const [blacklistOpen, setBlacklistOpen] = useState(false)
   const [blacklist, setBlacklist] = useState<string[]>([])
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [posterRow, setPosterRow] = useState<Row | null>(null)
   const [cropRow, setCropRow] = useState<Row | null>(null)
   const [reviewRow, setReviewRow] = useState<Row | null>(null)
@@ -1497,6 +1500,19 @@ export default function ScraperApp() {
     void loadSubtitles(row)
   }
 
+  /** 媒体库面板点击行：转换为 Row 后复用现有详情弹窗。 */
+  const openLibraryItem = async (item: LibraryItem) => {
+    const row = rowFromLibrary(item)
+    if (item.posterUrl) {
+      try {
+        row.posterSrc = await native.coverSrc(item.posterUrl)
+      } catch {
+        // 封面加载失败只显示占位，不阻塞详情
+      }
+    }
+    openPoster(row)
+  }
+
   const openRow = async (row: Row) => {
     const target = filePath(row)
     if (!target) {
@@ -1755,6 +1771,9 @@ export default function ScraperApp() {
       case 'blacklist':
         setBlacklistOpen(true)
         break
+      case 'library':
+        setLibraryOpen(true)
+        break
       case 'reloadPlugins':
         void reloadPluginHost()
         break
@@ -1805,6 +1824,7 @@ export default function ScraperApp() {
         setConfigOpen(false)
         setAiOpen(false)
         setBlacklistOpen(false)
+        setLibraryOpen(false)
         setPluginSettingsOpen(false)
         return
       }
@@ -1933,6 +1953,11 @@ export default function ScraperApp() {
         patterns={blacklist}
         onCancel={() => setBlacklistOpen(false)}
         onSave={saveBlacklist}
+      />
+      <LibraryModal
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onOpenItem={(item) => void openLibraryItem(item)}
       />
       <PluginSettingsModal
         open={pluginSettingsOpen}

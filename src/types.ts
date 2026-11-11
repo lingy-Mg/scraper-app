@@ -131,10 +131,19 @@ export interface FsListing {
   entries: FsEntry[]
 }
 
+/** 媒体库来源（扫描根目录）。只记录路径，不移动/删除任何文件。 */
+export interface MediaSource {
+  path: string
+  name?: string
+  addedAt: number
+}
+
 export interface Settings {
   ai: AIConfig
   modes?: Record<string, unknown>
   lastFolder?: string
+  /** 已登记的媒体库来源；旧设置没有该字段时为空数组。 */
+  sources?: MediaSource[]
   minDur?: number
   compact?: boolean
   /** 默认隐藏短片（疑似广告）。 */
@@ -174,6 +183,51 @@ export interface LibraryItem {
   director?: string
   series?: string
   updatedAt?: number
+}
+
+export type LibrarySort = 'updatedAt' | 'title' | 'size' | 'dur' | 'year'
+export type LibraryOrder = 'asc' | 'desc'
+
+/** GET /api/library/query 查询条件；空字符串会被后端忽略。 */
+export interface LibraryQuery {
+  q?: string
+  mode?: string
+  maker?: string
+  actor?: string
+  tag?: string
+  status?: string
+  sort?: LibrarySort
+  order?: LibraryOrder
+  limit?: number
+  offset?: number
+}
+
+export interface LibraryQueryResult {
+  total: number
+  items: LibraryItem[]
+}
+
+/** 重复检测分组；一条记录只会出现在一个分组中（番号优先）。 */
+export interface DuplicateGroup {
+  reason: 'code' | 'size-duration'
+  key: string
+  items: LibraryItem[]
+}
+
+export interface StatCount {
+  name: string
+  count: number
+}
+
+/** GET /api/library/stats。 */
+export interface LibraryStats {
+  total: number
+  totalSize: number
+  byMode: Record<string, number>
+  byStatus: Record<string, number>
+  topMakers: StatCount[]
+  topActors: StatCount[]
+  topTags: StatCount[]
 }
 
 /** JavDB resolve 返回的磁力条目（插件已转为 camelCase）。 */

@@ -11,6 +11,7 @@ const items: MenuProps['items'] = [
       { type: 'divider' },
       { key: 'clean', label: '清理短片…' },
       { key: 'blacklist', label: '文件名黑名单…' },
+      { key: 'library', label: '媒体库…' },
       { key: 'organize', label: '整理文件…' },
       { key: 'config', label: '刮削配置…' },
       { key: 'ai', label: 'AI 识别设置…' },
