@@ -6,6 +6,8 @@ import type {
   AppInfo,
   Candidate,
   CropRect,
+  FsListing,
+  FsRoot,
   LibraryItem,
   MediaFile,
   NativeMode,
@@ -153,11 +155,22 @@ async function postScanStream(
   return result.files
 }
 
+/** 由 App 注册：打开目录选择弹窗，并把用户选择回传给 pickFolder()。 */
+export type FolderPickerHandler = (resolve: (path: string | null) => void) => void
+
+let folderPickerHandler: FolderPickerHandler | null = null
+
+export function registerFolderPicker(handler: FolderPickerHandler | null): void {
+  folderPickerHandler = handler
+}
+
 export interface NativeBridge {
   readonly mode: NativeMode
   appInfo(): Promise<AppInfo>
   scanFolder(path: string, recursive?: boolean, options?: ScanOptions): Promise<MediaFile[]>
   probeFile(path: string): Promise<MediaFile>
+  fsRoots(): Promise<FsRoot[]>
+  fsList(path: string): Promise<FsListing>
   pickFolder(): Promise<string | null>
   organize(req: OrganizeRequest): Promise<OrganizeResult[]>
   trash(paths: string[]): Promise<TrashResult>
@@ -213,9 +226,20 @@ export const native: NativeBridge = {
     return http<MediaFile>('/api/probe', { body: { path } })
   },
 
+  async fsRoots() {
+    const data = await http<{ roots: FsRoot[] }>('/api/fs/roots')
+    return data.roots ?? []
+  },
+
+  fsList(path) {
+    return http<FsListing>(`/api/fs/list?path=${encodeURIComponent(path)}`)
+  },
+
   async pickFolder() {
-    const data = await http<{ path: string | null }>('/api/pick-folder', { method: 'POST' })
-    return data.path ?? null
+    if (!folderPickerHandler) throw new Error('目录选择器尚未就绪')
+    return new Promise<string | null>((resolvePath) => {
+      folderPickerHandler?.(resolvePath)
+    })
   },
 
   organize(req) {

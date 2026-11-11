@@ -18,9 +18,10 @@ import PluginSettingsModal from './components/PluginSettingsModal'
 import PosterModal from './components/PosterModal'
 import CoverCropModal from './components/CoverCropModal'
 import BlacklistModal from './components/BlacklistModal'
+import FolderPickerModal from './components/FolderPickerModal'
 import { INITIAL_AI, INITIAL_MODES } from './data'
 import { fetchPlugins, identifyWithPlugin, reloadPlugins, toModeConfig } from './api'
-import { native } from './native'
+import { native, registerFolderPicker } from './native'
 import type {
   AIConfig,
   AIIdentifyResult,
@@ -167,6 +168,9 @@ export default function ScraperApp() {
   const [folder, setFolder] = useState('')
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [nativeMode, setNativeMode] = useState<NativeMode>(native.mode)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerInitial, setPickerInitial] = useState('')
+  const pickerResolveRef = useRef<((path: string | null) => void) | null>(null)
   const [task, setTask] = useState('空闲')
   const [hydrated, setHydrated] = useState(false)
   const [scan, setScan] = useState<ScanState>({
@@ -447,6 +451,24 @@ export default function ScraperApp() {
       setScan((prev) => ({ ...prev, active: false }))
       setTask('空闲')
     }
+  }
+
+  // 目录选择弹窗由 native.pickFolder() 触发，选择结果通过 Promise 回传。
+  useEffect(() => {
+    registerFolderPicker((resolve) => {
+      pickerResolveRef.current?.(null)
+      pickerResolveRef.current = resolve
+      setPickerInitial(folder)
+      setPickerOpen(true)
+    })
+    return () => registerFolderPicker(null)
+  }, [folder])
+
+  const closeFolderPicker = (path: string | null) => {
+    setPickerOpen(false)
+    const resolve = pickerResolveRef.current
+    pickerResolveRef.current = null
+    resolve?.(path)
   }
 
   // 启动：app_info → load_settings → fetchPlugins → 自动扫描上次目录
@@ -1870,6 +1892,13 @@ export default function ScraperApp() {
           将使用关键词重新调用当前模式的插件 / AI 识别，结果会显示在候选列表中。
         </div>
       </Modal>
+
+      <FolderPickerModal
+        open={pickerOpen}
+        initialPath={pickerInitial}
+        onCancel={() => closeFolderPicker(null)}
+        onSelect={(path) => closeFolderPicker(path)}
+      />
 
       {ctx && (
         <>

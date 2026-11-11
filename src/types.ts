@@ -95,6 +95,25 @@ export interface AppInfo {
   native: boolean
 }
 
+export interface FsRoot {
+  name: string
+  path: string
+  kind: 'drive' | 'home' | 'common'
+}
+
+export interface FsEntry {
+  name: string
+  path: string
+  isDir: true
+  hidden: boolean
+}
+
+export interface FsListing {
+  path: string
+  parent: string | null
+  entries: FsEntry[]
+}
+
 export interface Settings {
   ai: AIConfig
   modes?: Record<string, unknown>
