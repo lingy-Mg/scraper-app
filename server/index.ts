@@ -41,6 +41,7 @@ import {
   type OrganizeItem,
   type OrganizeRequest
 } from './files'
+import { findSubtitles } from './subtitles'
 import { HttpError, listFsDirectories, listFsRoots } from './fs'
 
 export {
@@ -386,6 +387,14 @@ async function handleApi(req: Request, url: URL) {
       return json(await listFsDirectories(url.searchParams.get('path') ?? ''), 200, NO_STORE)
     }
     return json({ error: 'not found' }, 404)
+  }
+
+  if (route === 'subtitles') {
+    if (parts[2] !== 'find') return json({ error: 'not found' }, 404)
+    if (req.method !== 'POST') return methodNotAllowed()
+    const body = ensureObject(await readJson(req), 'request')
+    const videoPath = requireString(body.videoPath, 'videoPath')
+    return json({ subtitles: await findSubtitles(videoPath) })
   }
 
   if (route === 'organize') {
