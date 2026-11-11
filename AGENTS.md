@@ -21,9 +21,12 @@ bun build server/index.ts --target=bun --outfile="$env:TEMP\server-check.js"
 bun test               # 单元测试（test/，临时目录隔离、mock 网络）
 bun run smoke          # HTTP 端到端冒烟（随机端口 + 临时数据目录）
 bun run check          # 一键自检：tsc → bun build → bun test → npm run build
+npm run e2e            # Playwright 浏览器端到端（首次需 npx playwright install chromium）
 ```
 
-测试约束：所有测试/脚本必须通过 `SCRAPER_DATA_DIR` 指向 `mkdtemp` 临时目录，不得读写项目 `data/` 或系统临时目录以外的用户数据；测试不联网。
+测试约束：单元/冒烟测试必须通过 `SCRAPER_DATA_DIR` 指向 `mkdtemp` 临时目录；e2e 使用项目内
+`.tmp/e2e-data`（每次运行前清空）与 `.tmp/e2e-media`。不得读写真实 `data/` 或用户数据；测试不联网
+（e2e 用 `page.route` 拦截识别接口）。`npm run e2e` 不并入 `bun run check`。
 
 环境：Windows 10/11 x64；Node 26、Bun 1.3、WebView 浏览器（Edge/Chrome）。
 AI 识别可走本机 `opencode` CLI（需在 PATH 中）。服务只监听 `127.0.0.1`。

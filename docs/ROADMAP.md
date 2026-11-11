@@ -70,9 +70,14 @@
   - JavDB：有/无令牌的 `authorization: Bearer` 请求头、鉴权错误中文化、配置脱敏（mock fetch，不联网）
 - [x] HTTP 端到端冒烟（`scripts/smoke.mjs`）：随机端口 + 临时数据目录，覆盖扫描（含 NDJSON 流）→ 探测 → 媒体库 → 整理 + NFO → 回收站
 - [x] 一键自检（`bun run check`）：`tsc --noEmit` → `bun build` → `bun test` → `npm run build`
-- [ ] UI：Playwright 或浏览器脚本覆盖扫描→刮削→整理→重载（前端交互仍未覆盖）
+- [x] 浏览器端到端（`npm run e2e`，Playwright + Chromium，8 个用例）
+  - 隔离：固定端口 5180、`SCRAPER_DATA_DIR=.tmp/e2e-data`（每次运行前清空）、测试媒体 `.tmp/e2e-media`；不触碰真实 `data/`
+  - 已覆盖：首页无 console/pageerror、目录选择器（盘符/手动跳转/取消）、媒体库四标签空态、主题切换与刷新持久化、
+    列显隐持久化（操作/选择列不可隐藏）、扫描链路与进度条（黑名单/非视频/子目录）、刮削队列暂停/继续/取消
+    （`page.route` 返回假候选，验证暂停不派发、取消中断在途请求且已完成行保留）
+  - 未覆盖：整理弹窗与 NFO/封面写入、候选选择与 AI 回退、磁力面板、设置导入导出、文件名黑名单 UI、列宽拖动
 - [ ] 真实网络：JavDB / TMDB / Bangumi / OpenCode CLI（当前全部 mock 或离线）
-- 验收：`bun test`、`bun run smoke`、`bun run check` 均退出码 0
+- 验收：`bun test`、`bun run smoke`、`bun run check`、`npm run e2e` 均退出码 0
 
 ### P6 体验
 

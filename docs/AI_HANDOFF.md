@@ -1,6 +1,6 @@
 # AI / 开发者交接文档
 
-> 更新时间：2026-11-11
+> 更新时间：2026-11-12
 > 配套阅读：[AGENTS.md](../AGENTS.md) · [ROADMAP.md](ROADMAP.md) · [bridge-contract.md](bridge-contract.md) · [plugin-contract.md](plugin-contract.md) · [providers-library-contract.md](providers-library-contract.md) · [javdb-app-api.md](javdb-app-api.md)
 
 ## 1. 产品定位与功能矩阵
@@ -67,10 +67,14 @@ server/
     av/  javdb/{plugin.json,index.ts,javdb-api.ts}
     movie/  tv/  anime/{plugin.json,index.ts,bangumi.ts}
 test/                         # bun:test 单元测试（mkdtemp + SCRAPER_DATA_DIR 隔离）
+e2e/                          # Playwright 浏览器端到端（隔离数据目录 + 项目内临时媒体）
+  playwright.config.ts        # 配置在项目根；固定端口 5180，失败保留截图/trace
+  global-teardown.ts          # 结束后清理 .tmp/e2e-media 与 .tmp/e2e-tmp
 scripts/
   dev.mjs                     # 开发：Bun watch + Vite
   start.mjs                   # 生产：单进程启动 + 打开浏览器
   smoke.mjs                   # HTTP 端到端冒烟（随机端口 + 临时数据目录）
+  e2e-server.mjs              # e2e webServer：清空 .tmp/e2e-data → 构建 → Bun 托管 dist
   check.mjs                   # 一键自检：tsc → bun build → bun test → npm run build
 data/                         # 项目根运行时目录（gitignore）
   plugins/                    # 用户插件（可选，同 id 覆盖内置）
@@ -269,7 +273,22 @@ CREATE TABLE items (
 bun test          # 92 个用例：扫描/整理/媒体库（查询/重复/统计）/来源/插件/文件浏览/JavDB 令牌/设置兼容与导入导出/任务队列
 bun run smoke     # 12 项 HTTP 端到端：扫描 → 探测 → 媒体库 → 查询/重复/统计 → 来源 → 设置导出脱敏/导入 → 整理+NFO → 回收站
 bun run check     # 一键：tsc --noEmit → bun build → bun test → npm run build，任一步失败退出 1
+npm run e2e       # 8 个 Playwright 浏览器用例；首次运行前执行 npx playwright install chromium
 ```
+
+浏览器端到端（`npm run e2e`）：
+
+- Playwright 以 `webServer` 运行 `scripts/e2e-server.mjs`：先 `npm run build`，再以
+  `SCRAPER_SERVE_DIST=1` 启动 Bun 单进程，固定 `127.0.0.1:5180`，
+  `reuseExistingServer: false`。端口被占用会直接失败，避免误连开发服务。
+- 数据隔离：`SCRAPER_DATA_DIR=.tmp/e2e-data`，每次运行前清空；测试媒体写在
+  `.tmp/e2e-media`，不触碰真实 `data/`，结束后由 `global-teardown.ts` 删除。
+- 不联网：刮削识别接口用 `page.route('**/api/plugins/**/identify')` 拦截并返回假候选。
+- 覆盖：首页无 console/pageerror、目录选择器、媒体库四标签空态、主题切换与持久化、
+  列显隐持久化、扫描链路与进度条、批量刮削暂停/继续/取消。
+- 失败产物：`test-results/`（截图、video、trace.zip）与 `playwright-report/`，
+  均已 gitignore；用 `npx playwright show-trace test-results/<用例>/trace.zip` 查看。
+- `npm run e2e` 不并入 `bun run check`，保持 check 快速。
 
 测试隔离方式：
 
@@ -279,7 +298,9 @@ bun run check     # 一键：tsc --noEmit → bun build → bun test → npm run
 - 冒烟脚本用 `Bun.spawn` 启动 `server/index.ts`，随机高位端口，`finally` 中 `child.kill()`（必要时 SIGKILL）并删临时目录；不得用 shell `kill $!`，避免残留进程。
 - JavDB 网络请求全部 mock `globalThis.fetch`，断言 Bearer 头、中文鉴权错误与 `maskConfig` 脱敏。
 
-未覆盖（需手工或后续补齐）：前端 UI 交互（Playwright）、真实 JavDB/TMDB/Bangumi/OpenCode 网络、非 MP4 且无 ffprobe 的时长、真实回收站还原。
+未覆盖（需手工或后续补齐）：整理弹窗与 NFO/封面写入、候选选择与 AI 回退、磁力面板、设置导入导出、
+文件名黑名单 UI、列宽拖动；真实 JavDB/TMDB/Bangumi/OpenCode 网络、非 MP4 且无 ffprobe 的时长、
+真实回收站还原。
 
 手工端到端：
 
