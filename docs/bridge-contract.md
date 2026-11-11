@@ -1,0 +1,337 @@
+# 原生桥接契约（Tauri ⇄ Bun ⇄ React）
+
+> 本文件是前端、Tauri Rust 侧、Bun 宿主三方共同遵守的接口约定。
+> 任何一侧改动接口，必须同步修改本文件。
+
+## 1. 运行环境与通道
+
+前端按以下优先级选择后端：
+
+1. `window.__TAURI_INTERNALS__` 存在 → 调用 Tauri `invoke`（生产桌面应用）。
+2. 否则 `GET /api/info` 在 800ms 内成功 → 调用 Bun HTTP 接口（`npm run dev`）。
+3. 否则进入「演示模式」：只使用内置数据，所有原生功能提示不可用。
+
+Tauri 命令与 Bun HTTP 接口在**语义、入参、返回值**上完全一致，仅传输方式不同。
+
+- 前端统一通过 `src/native.ts` 的 `native.scanFolder()` 等方法调用，业务组件不得直接 `invoke` 或 `fetch`。
+- 所有 JSON 字段使用 **camelCase**。
+- 失败时：Tauri 命令返回 `Err(String)`；HTTP 返回 `{ "error": string, "code"?: string }` 且状态码 4xx/5xx。
+- 路径一律使用**绝对路径**；返回给前端的路径使用当前平台分隔符。
+
+## 2. 共享类型
+
+```ts
+export interface MediaFile {
+  path: string
+  name: string
+  size: number
+  duration: number | null      // 秒，读取失败为 null
+  probedBy: 'ffprobe' | 'mp4' | 'none'
+  width?: number | null
+  height?: number | null
+  videoCodec?: string | null
+}
+
+export interface ScanRequest {
+  path: string
+  recursive?: boolean         // 默认 true
+  blacklist?: string[]        // 命中这些文件名的文件直接跳过
+  stream?: boolean            // 仅 HTTP：true 时以 NDJSON 流回进度
+}
+
+/**
+ * 扫描进度。Tauri 通过 `scan-progress` 事件推送；
+ * HTTP 通过 `/api/scan` 的 NDJSON 流推送同一结构。
+ */
+export interface ScanProgress {
+  scanId: string              // 前端生成，用于过滤事件
+  phase: 'walk' | 'probe'     // 枚举目录 / 读取视频信息
+  found: number               // 已发现的视频数
+  dirs: number                // 已枚举的目录数
+  total: number               // probe 阶段的文件总数（walk 阶段为 0）
+  done: number                // probe 阶段已处理数
+  current: string             // 当前目录名或文件名
+  files?: MediaFile[]         // 本批探测完成的文件（用于增量渲染）
+}
+
+export interface OrganizeItem {
+  source: string               // 源文件绝对路径
+  relativeTarget: string       // 相对目标目录，允许 / 或 \ 分隔，含扩展名
+  nfo?: string                 // 可选：写入同名 .nfo 的 XML
+  posterUrl?: string           // 可选：下载为同名 .jpg 的海报
+  posterCrop?: {               // 可选：手动裁剪区域（源图像素）
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+}
+
+export interface OrganizeRequest {
+  dest: string
+  action: 'move' | 'copy'      // 默认 move
+  conflict: 'skip' | 'overwrite' | 'rename'  // 默认 rename
+  removeEmptyDirs?: boolean    // 默认 false
+  items: OrganizeItem[]
+}
+
+export interface OrganizeResult {
+  source: string
+  target: string               // 实际写入路径（自动重命名后为最终路径）
+  ok: boolean
+  skipped: boolean
+  error?: string
+  warning?: string             // 主文件成功但 NFO/封面失败时的说明
+}
+
+export interface TrashResult {
+  removed: number
+  failed: { path: string; error: string }[]
+}
+
+export interface AppInfo {
+  version: string
+  platform: string
+  ffprobe: boolean             // ffprobe 是否可用
+  native: boolean              // 是否 Tauri 原生后端
+}
+
+export interface Settings {
+  ai: AIConfig
+  modes?: Record<string, unknown>   // 前端模式配置快照，后端原样保存
+  lastFolder?: string
+  minDur?: number
+  compact?: boolean
+  blacklist?: string[]             // 文件名黑名单，见 3.1.2
+}
+
+export interface AIConfig {
+  enabled: boolean
+  provider: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  temperature: number
+  timeout: number              // 秒
+  cleanFilename: boolean
+  inferCode: boolean
+  verify: boolean
+  fallback: boolean
+  autoPick: boolean
+  autoPickThreshold: number
+  prompt: string
+}
+
+export interface Candidate {
+  id: string
+  title: string
+  year: string
+  code?: string
+  source: string
+  score: number
+  overview: string
+  poster: number
+}
+
+export interface AITestResult {
+  ok: boolean
+  latencyMs: number
+  message: string
+}
+
+export interface AIIdentifyResult {
+  code: string
+  title: string
+  confidence: number
+  ms: number
+  fallback: boolean            // true 表示结果来自本地正则而非模型
+  raw?: string
+}
+
+export interface AIPickResult {
+  pick: string                 // Candidate.id
+  confidence: number
+  reason: string
+  ms: number
+  fallback: boolean
+}
+```
+
+## 3. Tauri 命令
+
+所有命令在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中注册。
+
+| 命令 | 入参 | 返回 |
+|---|---|---|
+| `app_info` | — | `AppInfo` |
+| `scan_folder` | `{ path, recursive?, scanId?, blacklist? }` | `MediaFile[]`；同时发 `scan-progress` 事件 |
+| `probe_file` | `{ path }` | `MediaFile` |
+| `pick_folder` | — | `string \| null` |
+| `organize_files` | `OrganizeRequest` | `OrganizeResult[]` |
+| `trash_files` | `{ paths: string[] }` | `TrashResult` |
+| `load_settings` | — | `Settings` |
+| `save_settings` | `{ settings: Settings }` | `void` |
+| `ai_test` | `{ config: AIConfig }` | `AITestResult` |
+| `ai_identify` | `{ config, filename }` | `AIIdentifyResult` |
+| `ai_pick` | `{ config, filename, candidates }` | `AIPickResult` |
+| `javdb_identify` | `{ filename }` | `Candidate[]` |
+| `javdb_detail` | `{ id }` | `object`（含 `magnets`） |
+| `cover_cache` | `{ url }` | `string`（data URL，完整封面） |
+| `cover_crop` | `{ url, x, y, width, height }` | `string`（data URL，手动裁剪） |
+| `open_path` | `{ path }` | `void` |
+| `reveal_path` | `{ path }` | `void` |
+| `window_minimize` | — | `void` |
+| `window_toggle_maximize` | — | `void` |
+| `window_close` | — | `void` |
+
+命令参数使用 Tauri 默认的 camelCase 映射（Rust 侧用 `#[tauri::command]`，结构体 `#[serde(rename_all = "camelCase")]`）。
+前端调用方式：`invoke('scan_folder', { path, recursive: true, scanId: 'scan-xxx', blacklist: ['sample'] })`。
+
+### 3.1 扫描规则
+
+- 视频扩展名：`.mp4 .m4v .mov .mkv .avi .wmv .ts .m2ts .flv .webm`。
+- `recursive=true` 时递归子目录；跳过隐藏目录（`.` 开头）与符号链接。
+- 时长获取顺序：
+  1. `.mp4/.m4v/.mov` 直接解析 `moov/mvhd`（不依赖外部程序）。
+  2. `ffprobe`：`-v error -show_entries format=duration -of json`，同时取 `stream=width,height,codec_name`。
+  3. 都失败 → `duration: null`, `probedBy: "none"`。
+- `ffprobe` 查找顺序：`PATH` → 可执行文件同目录 → `src-tauri/binaries/`。
+- 结果按 `name` 排序。
+- Windows 下启动子进程必须加 `CREATE_NO_WINDOW`，避免弹黑框。
+
+### 3.1.1 扫描进度
+
+- 扫描分两阶段：`walk`（只枚举视频路径，快）→ `probe`（逐个读时长，慢）。
+- `walk` 阶段：`total=0`、`found` 为已发现视频数、`dirs` 为已枚举目录数、`current` 为当前目录/文件名。
+- `probe` 阶段：枚举结束后立即推送一次 `done=0` 的初始事件，`total` 为文件总数；之后按批推送。
+- `files` 只包含**本批**探测完成的 `MediaFile`，前端据此增量渲染表格；最终结果仍由命令返回值给出。
+- 限频：walk ≤ 1 次/150ms；probe 每 16 个文件或 180ms 一次，结束时必发一次。
+- 事件名 `scan-progress`；`scanId` 由前端传入并原样回传，前端据此忽略其它扫描的事件。
+- 前端收到 `done/total` 后显示百分比进度条；`walk` 阶段显示不确定进度动画与实时计数。
+- 扫描期间不写媒体库，结束后统一落库（避免大目录反复 upsert）。
+
+### 3.1.2 文件名黑名单
+
+- 设置项：`Settings.blacklist: string[]`，随设置持久化；扫描请求可带 `blacklist` 覆盖（前端每次扫描都传当前值）。
+- 匹配对象是**文件名**（不含目录），不区分大小写：
+  - 含 `*` 或 `?` → 通配符整名匹配（`*` 任意长度，`?` 单个字符）；
+  - 不含通配符 → 包含匹配（`sample` 命中 `sample.mp4`、`my-sample.mkv`）；
+  - 任一条命中即视为黑名单文件。
+- 三端实现必须一致：`src/utils.ts`（显示过滤）、`server/scan.ts`（Bun 扫描）、`src-tauri/src/media.rs`（Rust 扫描）。
+- 黑名单文件在 `walk` 阶段直接跳过：不计数、不探测、不返回，也永远不会写入媒体库。
+- 前端隐藏已加载的命中行（不删除文件）；下一次 replace 扫描会因文件不再返回而顺带清理其媒体库记录。
+- 右键表格行「拉黑此文件名」按完整文件名添加一条规则；`文件 → 文件名黑名单…` 可增删规则。
+
+### 3.2 整理规则
+
+- 目标路径 = `dest / relativeTarget`；先创建父目录。
+- 拒绝越界：规范化后必须仍位于 `dest` 之内，否则该项 `ok=false, error="目标路径越界"`。
+- `conflict=skip`：目标存在 → `ok=true, skipped=true`。
+- `conflict=overwrite`：删除已存在的目标文件。
+- `conflict=rename`：追加 ` (2)`、` (3)`… 直到不冲突。
+- `action=move` 优先 `fs::rename`；跨卷失败时复制 → 校验大小 → 删除源文件。
+- 单项失败不影响其他项。
+- `removeEmptyDirs`：整理结束后自底向上删除 `dest` 之外、且变空的**源目录**（只删除本次源文件所在目录，且不删除 `dest` 本身）。
+
+### 3.3 删除
+
+- 必须进入系统回收站，禁止永久删除。
+- Rust 使用 `trash` crate；Bun 使用 Windows `Microsoft.VisualBasic.FileIO.FileSystem::DeleteFile`（`SendToRecycleBin`）。
+
+### 3.4 设置持久化
+
+- Tauri：`app_config_dir()/settings.json`，原子写入（写临时文件再 rename）。
+- Bun：`server/data/settings.json`。
+- 文件不存在 → 返回默认值（`ai` 使用内置默认配置，`lastFolder` 为空）。
+- `save_settings` 整体覆盖，不做深合并。
+
+## 4. AI 行为
+
+请求：OpenAI 兼容 `POST {baseUrl}/chat/completions`，`Authorization: Bearer {apiKey}`。
+
+- `temperature` 使用配置值，`timeout` 秒作用于整个请求。
+- `apiKey` 为空且是 Ollama（`baseUrl` 含 `11434`）时不发 Authorization。
+- 模型输出必须是 JSON；解析前去掉 ```json 代码围栏，并截取第一个 `{` 到最后一个 `}`。
+- `ai_identify` 提示词：使用 `config.prompt`，把 `{filename}` 替换为清洗后的文件名。
+- `ai_pick` 提示词：要求返回 `{ "pick": "<candidate id>", "confidence": 0..1, "reason": "..." }`，附原始文件名与候选 JSON。
+- `ai_test`：发起一个极小的 chat 请求（`max_tokens: 1`），返回耗时与结果；失败时 `ok=false` 且 `message` 含错误摘要。
+- 以下情况回退本地正则（`fallback: true`）：
+  - `config.enabled=false`
+  - 请求超时 / 网络错误 / 非 2xx
+  - 模型输出无法解析出 JSON
+  - 且仅当 `config.fallback=true`；若 `fallback=false` 则返回错误。
+- 本地番号正则：`[A-Z]{2,6}[-_]?\d{2,6}`（忽略大小写，`_` 归一为 `-`，转大写）。
+- `ai_pick` 回退策略：取 `candidates[0].id`，`confidence: 0`，`reason: "AI 不可用，默认选择第一条"`。
+- 不得把 API Key 写入日志或返回给前端以外的位置。
+- 发送给模型的只有文件名与候选元数据。
+
+## 4.1 JavDB 元数据
+
+- Bun 实现：`server/javdb.ts`；Rust 实现：`src-tauri/src/javdb.rs`；协议细节见 `docs/javdb-app-api.md`。
+- 有番号时只接受大小写/分隔符等价的**唯一精确匹配**，绝不回退搜索首项；无番号时按清洗后的名称返回前 N 条。
+- `duration` 在 App API 中是**分钟**，进入 `Candidate`/`Row` 前统一换算为秒（`<= 1000` 视为分钟）。
+- Bun 侧串行 + 1.2s 间隔 + host 失败切换 + 5 分钟缓存。
+- `Candidate` 额外字段：`posterUrl`、`maker`、`actors`、`duration`、`detailId`。
+- 识别优先级：插件（Bun）→ 原生 JavDB（Tauri）→ AI/正则。
+
+## 5. Bun HTTP 接口
+
+前缀 `/api`，仅监听 `127.0.0.1`。入参/返回与第 3 节一一对应。
+
+| 方法 | 路径 | 入参 | 返回 |
+|---|---|---|---|
+| GET | `/api/info` | — | `AppInfo` |
+| POST | `/api/scan` | `ScanRequest`（`stream=true` 时流式） | `MediaFile[]`；流式为 NDJSON |
+| POST | `/api/probe` | `{ path }` | `MediaFile` |
+| POST | `/api/pick-folder` | — | `{ path: string \| null }`（非 Tauri 无法弹窗，返回 400） |
+| POST | `/api/organize` | `OrganizeRequest` | `OrganizeResult[]` |
+| POST | `/api/trash` | `{ paths: string[] }` | `TrashResult` |
+| GET | `/api/settings` | — | `Settings` |
+| PUT | `/api/settings` | `Settings` | `Settings` |
+| POST | `/api/ai/test` | `{ config }` | `AITestResult` |
+| POST | `/api/ai/identify` | `{ config, filename }` | `AIIdentifyResult` |
+| POST | `/api/ai/pick` | `{ config, filename, candidates }` | `AIPickResult` |
+| POST | `/api/javdb/identify` | `{ filename }` | `{ candidates: Candidate[] }` |
+| POST | `/api/javdb/detail` | `{ id }` | `object`（含 `magnets`） |
+| POST | `/api/javdb/search` | `{ keyword, limit? }` | `{ movies: object[] }` |
+| POST | `/api/open` | `{ path }` | `{ ok: true }` |
+| POST | `/api/reveal` | `{ path }` | `{ ok: true }` |
+
+保留原有插件接口：`/api/plugins`、`/api/plugins/reload`、`/api/plugins/:id/{config,reload,identify}`、`/plugins/:id/settings/`、`/ws`。
+
+### 5.1 扫描流（`POST /api/scan`，`stream: true`）
+
+响应 `content-type: application/x-ndjson`，每行一个 JSON 事件：
+
+```jsonc
+{"type":"progress","progress":ScanProgress}
+{"type":"done","files":MediaFile[]}
+{"type":"error","error":"..."}
+```
+
+- `progress` 的 `files` 是本批结果；`done` 携带完整排序结果。
+- 前端必须兼容后端不返回 NDJSON 的旧实现（直接按 JSON 数组读取）。
+- `blacklist` 在流式与非流式下行为一致：命中的文件在枚举阶段即被跳过。
+
+## 6. 前端接入要求
+
+- `src/native.ts` 暴露 `native` 对象与 `native.mode: 'tauri' | 'http' | 'demo'`。
+- 应用启动顺序：`app_info` → `load_settings` → `fetchPlugins`（失败则内置模式）→ 若 `lastFolder` 存在则自动扫描。
+- 「选择文件夹」必须调用 `native.pickFolder()`；未选中时不做任何事。
+- 扫描必须订阅进度并在 UI 立即反馈：
+  - `walk` 阶段显示不确定进度动画 + 已发现视频数 / 已枚举目录数 / 当前目录；
+  - `probe` 阶段显示 `done/total` 百分比、当前文件与预计剩余时间；
+  - 表格按批增量渲染（约 200ms 一批），空表时显示扫描提示，禁止「扫描完成后一次性出现」。
+- 扫描期间禁用「选择文件夹 / 整理 / 开始刮削」，并暂停媒体库落库；结束后统一保存。
+- 黑名单：`Settings.blacklist` 由前端维护并通过设置持久化；每次扫描把当前规则传给后端（`native.scanFolder` 的 `blacklist`）。命中行必须从表格、计数、刮削、整理与清理中全部排除；右键行可「拉黑此文件名」，「文件 → 文件名黑名单…」可管理规则。拉黑只隐藏，不删除文件。
+- 「开始刮削」流程：
+  1. 对每个 `unmatched` 行调用插件 `identify`（Bun 可用时），得到候选。
+  2. 0 条 → `unmatched`；1 条 → `done`；多条 → `review`（带 `candidates`）。
+  3. 若 `ai.autoPick`，调用 `native.aiPick`，置信度 ≥ 阈值才自动采用。
+  4. 插件不可用时回退 `native.aiIdentify`。
+- 「整理」使用真实 `native.organize()`，按返回结果逐行更新日志与状态，失败必须显示原因。
+- 「删除 / 清理短片」使用 `native.trash()`，失败项保留在表格并提示。
+- 所有配置变更（AI、模式、上次目录）调用 `native.saveSettings()` 持久化（500ms 防抖）。
+- 窗口按钮调用对应 `window_*` 命令；非 Tauri 环境隐藏窗口按钮。
+- 状态栏的 ffprobe 状态、速度、任务数使用真实值，不再写死。
+- 演示模式必须显式标注，且不得把演示数据写入设置文件。

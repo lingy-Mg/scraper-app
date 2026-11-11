@@ -1,0 +1,28 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.tsbuildinfo
+
+# Rust 构建产物（cargo check/test 会生成数 GB）
+src-tauri/target/
+target/
+
+# 运行时数据：含 AI Key / TMDB Key / Bangumi Token / 媒体库 / 封面缓存
+server/data/
+
+# 密钥与本地配置
+.env
+.env.*
+*.pem
+*.key
+!*.key.example
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+*.tmp

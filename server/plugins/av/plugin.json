@@ -1,0 +1,28 @@
+{
+  "id": "av",
+  "name": "AV",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "order": 10,
+  "description": "JavDB / Minnano / FANZA 元数据，支持番号推断与多结果候选",
+  "entry": "index.ts",
+  "labels": { "code": "番号", "title": "标题" },
+  "defaults": {
+    "lang": "日语",
+    "sources": [
+      { "label": "JavDB", "on": true },
+      { "label": "Minnano", "on": true },
+      { "label": "FANZA", "on": true },
+      { "label": "JavBus", "on": false }
+    ],
+    "downloads": [
+      { "label": "封面", "on": true },
+      { "label": "背景图", "on": true },
+      { "label": "预告片", "on": true },
+      { "label": "NFO", "on": true },
+      { "label": "字幕", "on": false }
+    ],
+    "naming": "{片商}/{年份}/{番号} {标题}",
+    "organize": "{片商}/{年份}/{番号} {标题}"
+  }
+}

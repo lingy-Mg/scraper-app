@@ -1,0 +1,27 @@
+{
+  "id": "javdb",
+  "name": "JavDB",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "order": 12,
+  "description": "JavDB App API：番号精确匹配、详情、演员、封面、磁力",
+  "entry": "index.ts",
+  "labels": { "code": "番号", "title": "标题" },
+  "defaults": {
+    "lang": "日语",
+    "sources": [
+      { "label": "JavDB", "on": true },
+      { "label": "Minnano", "on": false },
+      { "label": "FANZA", "on": false }
+    ],
+    "downloads": [
+      { "label": "封面", "on": true },
+      { "label": "背景图", "on": false },
+      { "label": "预告片", "on": false },
+      { "label": "NFO", "on": true },
+      { "label": "字幕", "on": false }
+    ],
+    "naming": "{片商}/{年份}/{番号} {标题}",
+    "organize": "{片商}/{年份}/{番号} {标题}"
+  }
+}

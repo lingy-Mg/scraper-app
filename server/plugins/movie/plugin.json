@@ -1,0 +1,27 @@
+{
+  "id": "movie",
+  "name": "电影",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "order": 20,
+  "description": "TMDB / 豆瓣 / IMDb 电影元数据",
+  "entry": "index.ts",
+  "labels": { "code": "文件名", "title": "片名" },
+  "defaults": {
+    "lang": "中文",
+    "sources": [
+      { "label": "TMDB", "on": true },
+      { "label": "豆瓣", "on": true },
+      { "label": "IMDb", "on": false }
+    ],
+    "downloads": [
+      { "label": "封面", "on": true },
+      { "label": "背景图", "on": true },
+      { "label": "预告片", "on": false },
+      { "label": "NFO", "on": true },
+      { "label": "字幕", "on": false }
+    ],
+    "naming": "{标题} ({年份})",
+    "organize": "电影/{标题} ({年份})"
+  }
+}

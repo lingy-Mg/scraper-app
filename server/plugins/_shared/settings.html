@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>插件设置</title>
+    <style>
+      :root {
+        --line: #e2e5e9;
+        --line-2: #eef0f2;
+        --text: #1a1d21;
+        --muted: #636b76;
+        --muted-2: #9aa1ab;
+        --blue: #1f6feb;
+        --mono: "Cascadia Mono", Consolas, monospace;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+        color: var(--text);
+        background: #fff;
+        padding: 14px 16px 12px;
+      }
+      .head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 12px;
+      }
+      .head b { font-size: 13px; }
+      .head .ver { font-size: 10.5px; color: var(--muted-2); }
+      .head .id {
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--muted-2);
+        background: #fafbfc;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding: 1px 6px;
+      }
+      .field { margin-bottom: 12px; }
+      .field label {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 5px;
+      }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 3px 9px;
+        background: #fafbfc;
+        cursor: pointer;
+        user-select: none;
+      }
+      .chip input { accent-color: var(--blue); margin: 0; }
+      input[type="text"], select {
+        width: 100%;
+        height: 28px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 8px;
+        font: inherit;
+        color: var(--text);
+        background: #fff;
+        outline: 0;
+      }
+      input[type="text"] { font-family: var(--mono); font-size: 11px; }
+      input[type="text"]:focus, select:focus {
+        border-color: #9db8ef;
+        box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.12);
+      }
+      .hint {
+        font-size: 10.5px;
+        color: var(--muted-2);
+        margin-top: 5px;
+        font-family: var(--mono);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .example {
+        margin-top: 5px;
+        font-size: 10.5px;
+        color: var(--muted);
+      }
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line);
+      }
+      .foot .status { font-size: 10.5px; color: var(--muted-2); }
+      .foot .actions { margin-left: auto; display: flex; gap: 6px; }
+      button {
+        font: inherit;
+        height: 26px;
+        padding: 0 12px;
+        border-radius: 4px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--text);
+        cursor: pointer;
+      }
+      button:hover { background: #f7f8fa; }
+      button.primary {
+        background: var(--blue);
+        border-color: var(--blue);
+        color: #fff;
+      }
+      button.primary:hover { background: #1a63d6; }
+      button:disabled { opacity: 0.5; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <div class="head">
+      <b id="name">插件设置</b>
+      <span class="ver" id="ver"></span>
+      <span class="id" id="pid"></span>
+    </div>
+
+    <div class="field">
+      <label>数据源</label>
+      <div class="chips" id="sources"></div>
+    </div>
+
+    <div class="field">
+      <label>语言</label>
+      <select id="lang">
+        <option>中文</option>
+        <option>日语</option>
+        <option>英文</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>下载内容</label>
+      <div class="chips" id="downloads"></div>
+    </div>
+
+    <div class="field">
+      <label>命名规则</label>
+      <input type="text" id="naming" />
+      <div class="example" id="namingExample"></div>
+    </div>
+
+    <div class="field">
+      <label>整理规则</label>
+      <input type="text" id="organize" />
+      <div class="hint" id="organizeHint"></div>
+    </div>
+
+    <div class="foot">
+      <span class="status" id="status"></span>
+      <div class="actions">
+        <button id="cancel">取消</button>
+        <button class="primary" id="save">保存</button>
+      </div>
+    </div>
+
+    <script>
+      const pluginId = location.pathname.split("/")[2];
+      let config = null;
+      let meta = { name: pluginId, version: "" };
+
+      const $ = (id) => document.getElementById(id);
+      const post = (type, payload = {}) =>
+        parent.postMessage({ type, pluginId, ...payload }, "*");
+
+      const SAMPLE = {
+        "{片商}": "IDEA POCKET",
+        "{年份}": "2026",
+        "{番号}": "IDPC-001",
+        "{标题}": "影片本体",
+        "{剧名}": "影片本体",
+        "{演员}": "—",
+        "{季}": "01",
+        "{集}": "01"
+      };
+
+      function fill(tpl) {
+        let out = tpl;
+        for (const [key, value] of Object.entries(SAMPLE)) {
+          out = out.split(key).join(value);
+        }
+        return out;
+      }
+
+      function renderChips(container, items, key) {
+        container.innerHTML = items
+          .map(
+            (item, index) =>
+              `<label class="chip"><input type="checkbox" data-group="${key}" data-index="${index}" ${
+                item.on ? "checked" : ""
+              } />${item.label}</label>`
+          )
+          .join("");
+      }
+
+      function render() {
+        $("name").textContent = meta.name || pluginId;
+        $("ver").textContent = meta.version ? "v" + meta.version : "";
+        $("pid").textContent = pluginId;
+        renderChips($("sources"), config.sources || [], "sources");
+        renderChips($("downloads"), config.downloads || [], "downloads");
+        $("lang").value = config.lang || "中文";
+        $("naming").value = config.naming || "";
+        $("organize").value = config.organize || "";
+        updateExamples();
+      }
+
+      function updateExamples() {
+        const naming = $("naming").value;
+        const organize = $("organize").value;
+        $("namingExample").textContent = naming ? "示例：" + fill(naming) : "";
+        $("organizeHint").textContent = organize ? "整理：" + fill(organize) : "";
+      }
+
+      function collect() {
+        document
+          .querySelectorAll('input[type="checkbox"][data-group="sources"]')
+          .forEach((el) => {
+            config.sources[Number(el.dataset.index)].on = el.checked;
+          });
+        document
+          .querySelectorAll('input[type="checkbox"][data-group="downloads"]')
+          .forEach((el) => {
+            config.downloads[Number(el.dataset.index)].on = el.checked;
+          });
+        config.lang = $("lang").value;
+        config.naming = $("naming").value;
+        config.organize = $("organize").value;
+        return config;
+      }
+
+      async function load() {
+        try {
+          const [listRes, configRes] = await Promise.all([
+            fetch("/api/plugins"),
+            fetch("/api/plugins/" + pluginId + "/config")
+          ]);
+          if (listRes.ok) {
+            const list = await listRes.json();
+            const found = list.find((item) => item.id === pluginId);
+            if (found) meta = found;
+          }
+          if (!configRes.ok) throw new Error("无法读取配置");
+          config = await configRes.json();
+          render();
+          $("status").textContent = "";
+        } catch (error) {
+          $("status").textContent = "加载失败：" + error.message;
+        }
+      }
+
+      $("save").addEventListener("click", async () => {
+        const button = $("save");
+        button.disabled = true;
+        $("status").textContent = "保存中…";
+        try {
+          const payload = collect();
+          const res = await fetch("/api/plugins/" + pluginId + "/config", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error("保存失败");
+          $("status").textContent = "已保存";
+          post("plugin:saved", { config: await res.json() });
+        } catch (error) {
+          $("status").textContent = error.message;
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      $("cancel").addEventListener("click", () => post("plugin:close"));
+
+      $("naming").addEventListener("input", updateExamples);
+      $("organize").addEventListener("input", updateExamples);
+
+      window.addEventListener("message", (event) => {
+        const data = event.data || {};
+        if (data.type === "host:init" && data.config) {
+          config = { ...config, ...data.config };
+          render();
+        }
+      });
+
+      load();
+      post("plugin:ready");
+    </script>
+  </body>
+</html>

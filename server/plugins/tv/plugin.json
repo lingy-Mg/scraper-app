@@ -1,0 +1,26 @@
+{
+  "id": "tv",
+  "name": "电视剧",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "order": 30,
+  "description": "TMDB / TVDB 剧集元数据，按季与集组织",
+  "entry": "index.ts",
+  "labels": { "code": "文件", "title": "剧集" },
+  "defaults": {
+    "lang": "中文",
+    "sources": [
+      { "label": "TMDB", "on": true },
+      { "label": "TVDB", "on": true },
+      { "label": "豆瓣", "on": false }
+    ],
+    "downloads": [
+      { "label": "封面", "on": true },
+      { "label": "剧照", "on": true },
+      { "label": "NFO", "on": true },
+      { "label": "字幕", "on": true }
+    ],
+    "naming": "{剧名}/Season {季}/{剧名} - S{季}E{集}",
+    "organize": "电视剧/{剧名}/Season {季}"
+  }
+}
