@@ -18,6 +18,7 @@
 | 插件宿主（打包加载 / 热重载 / 用户目录） | ✅ | `server/registry.ts`、`server/plugins/` |
 | AI（OpenAI 兼容 / OpenCode CLI） | ✅ | `server/ai.ts`（经 ctx.ai 注入插件） |
 | SQLite 媒体库 | ✅ | `server/library.ts` |
+| 媒体库增强（查询/重复/统计/来源） | ✅ | `server/library.ts`、`server/sources.ts`、`src/components/LibraryModal.tsx` |
 | 默认隐藏短片 / 清理弹窗列表 | ✅ | `src/App.tsx` |
 | 底部日志默认显示 / 拖动高度 | ✅ | `src/components/LogPanel.tsx`、`src/App.tsx` |
 | NFO + 封面随整理写入 | ✅ | `server/files.ts`、`src/utils.ts` |
@@ -51,10 +52,12 @@ src/
     CandidateModal/PosterModal/PluginSettingsModal
     MagnetList                # 磁力列表 + 复制 / 手动复制降级
     FolderPickerModal         # 网页内目录选择
+    LibraryModal              # 媒体库：列表/重复/统计/来源
 server/
   index.ts                    # Bun HTTP + /ws + 插件资源 + dist 静态托管
   registry.ts                 # 插件发现、打包加载、热重载、用户插件覆盖
   scan.ts / files.ts / subtitles.ts / settings.ts / ai.ts / library.ts
+  sources.ts                  # 媒体库来源 CRUD（只记录路径，不删文件）
   plugins/
     _shared/{types,plugin-utils,tmdb,tmdb-plugin}.ts
     _shared/settings.html
@@ -88,7 +91,11 @@ AGENTS.md
   - `POST /api/plugins/:id/{identify,resolve}`、`GET/PUT /api/plugins/:id/config`
   - 内置 id：`javdb`、`av`、`movie`、`tv`、`anime`
   - 旧路由 `/api/javdb/*`、`/api/tmdb/*`、`/api/bangumi/*` 已删除
-- 媒体库：`/api/library/{list,upsert,remove,clear}`
+- 媒体库：`/api/library/{list,query,duplicates,stats,upsert,remove,clear}`
+  - `query` 支持 `q/mode/maker/actor/tag/status/sort/order/limit/offset`，返回 `{ total, items }`
+  - `duplicates` 返回 `{ groups: [{ reason, key, items }] }`，同番号优先
+  - `stats` 返回总数/总大小/按模式/按状态/Top 片商/演员/标签
+- 来源：`GET/POST/DELETE /api/sources`（存 `Settings.sources`，扫描成功自动登记；删除只删记录）
 - 封面：`/api/cover?url=...&x=&y=&width=&height=`
 - 插件资源 / WS：`/plugins/:id/settings/`、`/ws`
 
@@ -107,8 +114,11 @@ interface Settings {
   logOpen?: boolean        // 默认 true
   logHeight?: number       // 默认 180
   blacklist?: string[]     // 文件名黑名单（支持 * / ?，无通配符按包含匹配）
+  sources?: { path: string; name?: string; addedAt: number }[]  // 媒体库来源
 }
 ```
+
+`PUT /api/settings` 在请求未携带 `sources` 时保留现有来源，避免前端保存其它设置时覆盖来源记录。
 
 `ModeConfig` 额外包含：`tmdbApiKey`、`tmdbLang`、`bangumiToken`（按模式保存）。
 插件调用时通过 `ctx.modeConfig` 读取这些值；语言与 `sources` 开关以插件自身 `ctx.config` 为准。
@@ -137,15 +147,21 @@ CREATE TABLE items (
   status TEXT NOT NULL DEFAULT 'unmatched',
   year TEXT, maker TEXT, actors TEXT, overview TEXT, src TEXT,
   score REAL, dur INTEGER, size INTEGER,
-  poster_url TEXT, detail_id TEXT, tags_json TEXT,
+  poster_url TEXT, poster_crop_json TEXT, detail_id TEXT, tags_json TEXT,
+  release_date TEXT, director TEXT, series TEXT,
   updated_at INTEGER NOT NULL
 );
+-- 幂等索引：mode / code / size / dur / updated_at
 ```
+
+查询层：`queryLibrary(options)` 返回 `{ total, items }`；`findDuplicates(mode?)`；`libraryStats(mode?)`。
+所有查询值参数化，排序字段只取白名单（`updatedAt/title/size/dur/year`），`limit` 默认 50、上限 500。
 
 规则：
 
 - 扫描新增行 `mode=''`，可被任意模式刮削；刮削成功后写入当前模式。
 - 启动时按最近一条记录的 `mode` 恢复模式。
+- 扫描成功（流式/非流式）后自动把扫描根写入 `Settings.sources` 并去重；来源删除只删记录。
 - `hideShorts` 只影响展示与「开始刮削」，不影响「清理短片」。
 - `.d.ts` 旧记录在启动时自动删除。
 
@@ -221,6 +237,7 @@ CREATE TABLE items (
 - **扫描进度**：扫描分 `walk`（枚举）→ `probe`（读时长）两阶段；走 `/api/scan` 的 NDJSON 流；`src/components/ScanProgressBar.tsx` 显示进度与当前位置，`App.tsx` 每 200ms 批量把 `files` 合并进表格；扫描期间暂停媒体库落库
 - **文件名黑名单**：`Settings.blacklist` 按文件名（不含目录）屏蔽 BT 附带文件；不区分大小写，`*`/`?` 通配符，无通配符按包含匹配。两份实现（`src/utils.ts` 的 `isBlacklisted`、`server/scan.ts`），改动必须同步。扫描时在 `walk` 阶段直接跳过；已加载的命中行从表格/计数/刮削/整理/清理中排除；右键行可拉黑，`BlacklistModal` 可增删规则。只隐藏，不删除文件
 - **目录选择**：`native.pickFolder()` 打开 `FolderPickerModal`，通过 `/api/fs/roots` 与 `/api/fs/list` 浏览真实目录，不调用系统文件夹对话框。
+- **媒体库面板**：菜单「文件 → 媒体库…」打开 `LibraryModal`，四个标签页：列表（搜索/筛选/排序/分页，点击行复用详情弹窗）、重复（只展示与保留建议，不自动删除）、统计（总数/总大小/分布/Top 列表）、来源（添加复用 `pickFolder()`，删除二次确认且只删记录）。全部请求经 `native.libraryQuery/libraryDuplicates/libraryStats/listSources/addSource/removeSource`，不直接 `fetch`。
 - **磁力面板**：打开详情弹窗时，JavDB / AV 行按 `detailId` 调用 `POST /api/plugins/:id/resolve`，取 `magnets[]` 存到行内（不写媒体库）。`MagnetList` 只做展示与复制：名称超长省略 + tooltip，显示大小/中文字幕/高清/文件数；单条与全部复制；剪贴板不可用时弹只读文本框。无数据显示「暂无磁力数据」，鉴权失败显示令牌提示。**不得内置下载器或调用下载接口**。
 
 ## 9. 验证与测试
@@ -228,8 +245,8 @@ CREATE TABLE items (
 自动化（不联网、不读写项目 `data/`）：
 
 ```powershell
-bun test          # 6 个文件 42 个用例：扫描/整理/媒体库/插件/文件浏览/JavDB 令牌
-bun run smoke     # HTTP 端到端：扫描（含 NDJSON 流）→ 探测 → 媒体库 → 整理+NFO → 回收站
+bun test          # 73 个用例：扫描/整理/媒体库（查询/重复/统计）/来源/插件/文件浏览/JavDB 令牌
+bun run smoke     # 10 项 HTTP 端到端：扫描 → 探测 → 媒体库 → 查询/重复/统计 → 来源 → 整理+NFO → 回收站
 bun run check     # 一键：tsc --noEmit → bun build → bun test → npm run build，任一步失败退出 1
 ```
 

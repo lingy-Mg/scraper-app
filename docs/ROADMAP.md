@@ -47,13 +47,17 @@
 - 已完成：插件打包加载、目录内任意文件热重载、用户插件目录覆盖、单插件错误隔离
 - 计划：插件调用超时与失败重试；`plugin.json` / `defaults` 配置校验；插件依赖版本检查
 - 验收：单个插件崩溃不影响 API；错误在模式栏可见
+- ~~打包版插件宿主~~ **已废弃**：项目已改为纯 B/S 单端，插件宿主只随 Bun 单进程运行，不再生成 exe/安装包。
 
-### P4 媒体库增强
+### P4 媒体库增强（已完成）
 
-- 多目录来源管理（当前只记录 lastFolder）
-- 全局搜索、按演员/片商/标签筛选
-- 重复文件检测（同 size + 时长 + 番号）
-- 统计页（数量/大小/成功率/耗时）
+- [x] 多目录来源管理：`Settings.sources` 持久化；`GET/POST/DELETE /api/sources`；扫描成功后自动登记扫描根；删除只删记录，不删媒体库与文件
+- [x] 全局搜索与筛选：`GET /api/library/query` 支持 `q`（title/code/file/actors/maker/series）、`mode`、`maker`、`actor`、`tag`、`status`、排序与分页
+- [x] 重复文件检测：`GET /api/library/duplicates`，同番号优先，其次同 size + 同 dur；一条记录只进入一个分组
+- [x] 统计页：`GET /api/library/stats`，总数/总大小/按模式/按状态/Top 片商/演员/标签
+- [x] 前端 `LibraryModal`：列表、重复、统计、来源四个标签页；所有请求经 `src/native.ts`
+- 验证：`bun test`（73 用例）、`bun run smoke`（10 项）、`bun run check`；真实库只读查询总数 127 保持不变
+- 未覆盖 / 后续：成功率/耗时统计（当前媒体库未记录开始/结束时间与失败原因）；重复项一键清理；来源目录同步扫描状态
 
 ### P5 自动化测试（基础部分已完成）
 

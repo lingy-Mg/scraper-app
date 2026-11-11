@@ -32,6 +32,9 @@ export interface LibraryItem {
   }
   detailId?: string
   tags?: string[]
+  releaseDate?: string
+  director?: string
+  series?: string
   updatedAt?: number    // 毫秒；由写入方生成
 }
 ```
@@ -44,10 +47,55 @@ JSON 使用 camelCase。未知字段忽略。
 
 ```ts
 export function listItems(): LibraryItem[]
+export function queryLibrary(options?: LibraryQueryOptions): { total: number; items: LibraryItem[] }
+export function findDuplicates(mode?: string): DuplicateGroup[]
+export function libraryStats(mode?: string): LibraryStats
 export function upsertItems(items: LibraryItem[]): number
 export function removeItems(paths: string[]): number
 export function clearItems(mode?: string): number
 ```
+
+查询层类型：
+
+```ts
+export interface LibraryQueryOptions {
+  q?: string
+  mode?: string
+  maker?: string
+  actor?: string
+  tag?: string
+  status?: string
+  sort?: 'updatedAt' | 'title' | 'size' | 'dur' | 'year'
+  order?: 'asc' | 'desc'
+  limit?: number   // 默认 50，最大 500
+  offset?: number  // 默认 0
+}
+
+export interface DuplicateGroup {
+  reason: 'code' | 'size-duration'
+  key: string
+  items: LibraryItem[]
+}
+
+export interface LibraryStats {
+  total: number
+  totalSize: number
+  byMode: Record<string, number>
+  byStatus: Record<string, number>
+  topMakers: { name: string; count: number }[]
+  topActors: { name: string; count: number }[]
+  topTags: { name: string; count: number }[]
+}
+```
+
+查询契约：
+
+- `q` 模糊匹配 `title / code / file / actors / maker / series`；空字符串忽略。
+- `maker` / `actor` 包含匹配；`tag` 只匹配 `tags` 数组中的完整元素。
+- 所有值参数化绑定；排序字段从白名单映射到列名。
+- `limit` 默认 50、上限 500；`offset` 默认 0；结果按排序字段 + `path ASC` 稳定排序。
+- 重复检测：番号（`trim + 大写`）优先，其次 `size > 0 && dur > 0` 且两者相同；一条记录只进入一个分组。
+- 统计：`totalSize` 只累加 `size > 0`；演员按 ` / ` 拆分；Top 列表最多 10 项。
 
 - 数据库：`data/library.db`，`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`
 - 表：
@@ -69,12 +117,23 @@ CREATE TABLE IF NOT EXISTS items (
   dur INTEGER,
   size INTEGER,
   poster_url TEXT,
+  poster_crop_json TEXT,
   detail_id TEXT,
   tags_json TEXT,
+  release_date TEXT,
+  director TEXT,
+  series TEXT,
   updated_at INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_items_mode ON items(mode);
+CREATE INDEX IF NOT EXISTS idx_items_code ON items(code);
+CREATE INDEX IF NOT EXISTS idx_items_size ON items(size);
+CREATE INDEX IF NOT EXISTS idx_items_dur ON items(dur);
+CREATE INDEX IF NOT EXISTS idx_items_updated_at ON items(updated_at);
 ```
 
+- 索引在首次打开数据库时幂等创建（`CREATE INDEX IF NOT EXISTS`）。
 - 所有写操作在事务内完成；`upsertItems` 返回受影响行数。
 - 缺失 `updatedAt` 时使用当前时间。
 - 数据库目录不存在时创建。
@@ -207,9 +266,13 @@ export async function bangumiDetail(
 
 - Bun：媒体库仍在 `server/index.ts` 注册：
   - `POST /api/library/list` → `{ items: [] }`（GET 亦可）
+  - `GET /api/library/query?...` → `{ total, items }`
+  - `GET /api/library/duplicates?mode=` → `{ groups: DuplicateGroup[] }`
+  - `GET /api/library/stats?mode=` → `LibraryStats`
   - `POST /api/library/upsert` `{ items }` → `{ count }`
   - `POST /api/library/remove` `{ paths }` → `{ count }`
   - `POST /api/library/clear` `{ mode? }` → `{ count }`
+- 来源管理：`server/sources.ts` 与 `GET/POST/DELETE /api/sources`；来源存在 `Settings.sources`，删除只删记录。
 - Bun：元数据源通过通用插件接口注册（不再有 `/api/tmdb/*`、`/api/bangumi/*`）：
   - `POST /api/plugins/{movie|tv}/identify` `{ filename, options: { apiKey, lang, mediaType } }` → `{ candidates }`
   - `POST /api/plugins/{movie|tv}/resolve` `{ candidateId, options: { apiKey, lang, mediaType } }` → detail

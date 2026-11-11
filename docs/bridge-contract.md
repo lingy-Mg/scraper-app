@@ -112,13 +112,23 @@ export interface AppInfo {
   native: boolean              // 保留字段，B/S 版恒为 false
 }
 
+export interface MediaSource {
+  path: string                     // resolve 后的绝对目录路径
+  name?: string                    // 显示名，默认目录名
+  addedAt: number                  // 毫秒时间戳
+}
+
 export interface Settings {
   ai: AIConfig
   modes?: Record<string, unknown>   // 前端模式配置快照，后端原样保存
   lastFolder?: string
   minDur?: number
   compact?: boolean
+  hideShorts?: boolean
+  logOpen?: boolean
+  logHeight?: number
   blacklist?: string[]             // 文件名黑名单，见 3.1.2
+  sources?: MediaSource[]          // 媒体库来源；旧设置缺省为空数组
 }
 
 export interface AIConfig {
@@ -240,8 +250,9 @@ export interface AIPickResult {
 ### 3.4 设置持久化
 
 - 存储位置：`data/settings.json`，原子写入（写临时文件再 rename）。
-- 文件不存在 → 返回默认值（`ai` 使用内置默认配置，`lastFolder` 为空）。
-- `save_settings` 整体覆盖，不做深合并。
+- 文件不存在 → 返回默认值（`ai` 使用内置默认配置，`lastFolder` 为空，`sources` 为空数组）。
+- `PUT /api/settings` 整体覆盖，但请求**未携带 `sources`** 时保留现有来源记录（避免前端保存其它设置时丢失来源）；显式传入 `sources` 时以其为准。
+- 旧设置缺少 `sources` → 读取时返回 `[]`。
 
 ### 3.5 本地字幕匹配（`POST /api/subtitles/find`）
 
@@ -311,6 +322,16 @@ export interface AIPickResult {
 | POST | `/api/subtitles/find` | `{ videoPath }` | `{ subtitles: SubtitleInfo[] }` |
 | POST | `/api/organize` | `OrganizeRequest`（含 `downloads`） | `OrganizeResult[]` |
 | POST | `/api/trash` | `{ paths: string[] }` | `TrashResult` |
+| GET/POST | `/api/library/list` | — | `{ items: LibraryItem[] }` |
+| GET | `/api/library/query` | `q/mode/maker/actor/tag/status/sort/order/limit/offset` | `{ total, items }` |
+| GET | `/api/library/duplicates` | `mode?` | `{ groups: DuplicateGroup[] }` |
+| GET | `/api/library/stats` | `mode?` | `LibraryStats` |
+| POST | `/api/library/upsert` | `{ items: LibraryItem[] }` | `{ count }` |
+| POST | `/api/library/remove` | `{ paths: string[] }` | `{ count }` |
+| POST | `/api/library/clear` | `{ mode? }` | `{ count }` |
+| GET | `/api/sources` | — | `{ sources: MediaSource[] }` |
+| POST | `/api/sources` | `{ path, name? }` | `{ source, sources, added }` |
+| DELETE | `/api/sources?path=<绝对目录>` | query `path` | `{ removed, sources }` |
 | GET | `/api/settings` | — | `Settings` |
 | PUT | `/api/settings` | `Settings` | `Settings` |
 | POST | `/api/ai/test` | `{ config }` | `AITestResult` |
@@ -376,6 +397,71 @@ export interface FsListing {
 - 前端 `FolderPickerModal`：左侧位置列表，中间目录列表（单击选中、双击进入），顶部面包屑 + 上一级 + 手动绝对路径跳转，底部「选择此文件夹」。
 - `native.pickFolder()` 不调用系统对话框，而是触发该弹窗并返回选中的绝对路径。
 
+### 5.3 媒体库查询、重复检测与统计
+
+```ts
+export type LibrarySort = 'updatedAt' | 'title' | 'size' | 'dur' | 'year'
+export type LibraryOrder = 'asc' | 'desc'
+
+export interface LibraryQuery {
+  q?: string          // 模糊匹配 title/code/file/actors/maker/series
+  mode?: string
+  maker?: string      // 包含匹配
+  actor?: string      // 包含匹配
+  tag?: string        // 按 tags 数组的完整元素匹配
+  status?: string
+  sort?: LibrarySort  // 默认 updatedAt
+  order?: LibraryOrder // 默认 desc
+  limit?: number      // 默认 50，最大 500
+  offset?: number     // 默认 0
+}
+
+export interface LibraryQueryResult {
+  total: number       // 满足条件的总行数（不受 limit/offset 影响）
+  items: LibraryItem[]
+}
+
+export interface DuplicateGroup {
+  reason: 'code' | 'size-duration'
+  key: string         // code 分组为规范化番号；size-duration 为 `${size}-${dur}`
+  items: LibraryItem[]
+}
+
+export interface StatCount { name: string; count: number }
+
+export interface LibraryStats {
+  total: number
+  totalSize: number
+  byMode: Record<string, number>
+  byStatus: Record<string, number>
+  topMakers: StatCount[]
+  topActors: StatCount[]
+  topTags: StatCount[]
+}
+```
+
+- 所有 SQL 值均参数化；排序字段只取白名单，禁止把用户输入拼进 SQL。
+- 空字符串条件忽略；`q` 中的 `%` / `_` / `\` 按字面量匹配。
+- 分页稳定：同排序值按 `path ASC` 兜底。
+- 参数非法返回 400：`limit` 非正整数、`offset` 为负/非整数、`sort` / `order` 不在白名单。
+- 重复检测只返回 ≥2 条的组：
+  - 番号分组优先，番号按 `trim + 大写` 归一；
+  - 剩余记录再按 `size > 0 && dur > 0` 且两者都相同分组；
+  - 同一条记录只出现在一个分组中。
+- 统计的 `totalSize` 只累加 `size > 0`；演员按 ` / ` 拆分；Top 列表最多 10 项。
+- 以上接口均返回 `Cache-Control: no-store`。
+
+### 5.4 媒体库来源
+
+- 存储：`Settings.sources`（`data/settings.json`），旧设置缺省为 `[]`。
+- `POST /api/sources`：
+  - `path` 必须是绝对路径、已存在且是目录，否则 400；
+  - 保存 `resolve` 后的路径；Windows 下按大小写不敏感去重；
+  - 已存在时返回原记录且 `added=false`，不重复写入；
+  - `name` 省略时使用目录名。
+- `DELETE /api/sources?path=`：只删除来源记录，**不删除媒体库记录，也不删除任何文件**；目录已不存在时仍可删除记录；不存在返回 404，缺少 `path` 返回 400。
+- 扫描成功（流式与非流式）后自动把扫描根加入来源并去重；登记失败只写 warning，不影响扫描结果。
+
 ## 6. 前端接入要求
 
 - `src/native.ts` 暴露 `native` 对象与 `native.mode: 'http'`（B/S 单端，始终为 `http`）。
@@ -402,4 +488,10 @@ export interface FsListing {
 - 「删除 / 清理短片」使用 `native.trash()`，失败项保留在表格并提示。
 - 所有配置变更（AI、模式、上次目录）调用 `native.saveSettings()` 持久化（500ms 防抖）。
 - 状态栏的 ffprobe 状态、速度、任务数使用真实值，不再写死。
+- 菜单「文件 → 媒体库…」打开 `LibraryModal`，包含四个标签页：
+  - 列表：搜索 + 模式/片商/演员/标签/状态筛选 + 排序 + 分页，点击行转换为 `Row` 复用现有详情弹窗；
+  - 重复：按分组展示并标出保留建议，只展示，不自动删除；
+  - 统计：总数/总大小/按模式/按状态/Top 片商/演员/标签；
+  - 来源：列表/添加（复用 `native.pickFolder()`）/删除（二次确认并说明不删文件）。
+- 以上请求统一走 `native.libraryQuery()` / `native.libraryDuplicates()` / `native.libraryStats()` / `native.listSources()` / `native.addSource()` / `native.removeSource()`，组件不得直接 `fetch`。
 - 浏览器环境没有窗口最小化/最大化/关闭权限，界面不提供桌面窗口按钮。
