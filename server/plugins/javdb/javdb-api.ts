@@ -30,7 +30,8 @@ const PUBLIC = {
   device_name: 'Pixel'
 }
 
-const DATA_DIR = join(import.meta.dir, 'data')
+/** 插件可能被打包到 `server/data/.plugin-cache`，运行时数据目录由宿主注入。 */
+const DATA_DIR = process.env.SCRAPER_DATA_DIR || join(import.meta.dir, '..', '..', 'data')
 const UUID_FILE = join(DATA_DIR, 'javdb-device.txt')
 
 export interface JavdbMovie {

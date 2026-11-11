@@ -10,6 +10,9 @@ const DATA_DIR = join(import.meta.dir, 'data')
 const CONFIG_FILE = join(DATA_DIR, 'config.json')
 const CACHE_DIR = join(DATA_DIR, '.plugin-cache')
 
+/** 插件打包后无法用相对路径定位运行时数据，统一由宿主通过环境变量注入。 */
+process.env.SCRAPER_DATA_DIR ??= DATA_DIR
+
 export interface SourceOpt {
   label: string
   on: boolean

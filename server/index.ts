@@ -18,7 +18,6 @@ import {
 import { findFfprobe, probeFile, scanFolder, scanFolderStream } from './scan'
 import { loadSettings, saveSettings, type AIConfig, type Settings } from './settings'
 import { aiIdentify, aiPick, aiTest, type Candidate } from './ai'
-import { javdbDetail, javdbIdentify, searchMovies } from './javdb'
 import { cacheCover } from './covers'
 import {
   clearItems,
@@ -571,34 +570,6 @@ async function handleApi(req: Request, url: URL) {
       return json(body)
     }
     return methodNotAllowed()
-  }
-
-  if (route === 'javdb') {
-    const action = parts[2]
-
-    if (action === 'identify') {
-      if (req.method !== 'POST') return methodNotAllowed()
-      const body = ensureObject(await readJson(req), 'request')
-      const filename = requireString(body.filename, 'filename')
-      return json({ candidates: await javdbIdentify(filename, { allowTitle: body.allowTitle === true }) })
-    }
-
-    if (action === 'detail') {
-      if (req.method !== 'POST') return methodNotAllowed()
-      const body = ensureObject(await readJson(req), 'request')
-      const id = requireString(body.id, 'id')
-      return json(await javdbDetail(id))
-    }
-
-    if (action === 'search') {
-      if (req.method !== 'POST') return methodNotAllowed()
-      const body = ensureObject(await readJson(req), 'request')
-      const keyword = requireString(body.keyword, 'keyword')
-      const limit = Number(body.limit ?? 10)
-      return json({ movies: await searchMovies(keyword, Number.isFinite(limit) ? limit : 10) })
-    }
-
-    return json({ error: 'not found' }, 404)
   }
 
   if (route === 'ai') {

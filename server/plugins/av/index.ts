@@ -1,4 +1,4 @@
-import { javdbDetail, javdbIdentify } from '../../javdb'
+import { javdbDetail, javdbIdentify } from '../javdb/javdb-api'
 
 /**
  * AV 模式：直接复用 JavDB App API 客户端。

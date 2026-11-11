@@ -1,4 +1,4 @@
-import { javdbDetail, javdbIdentify } from '../../javdb'
+import { javdbDetail, javdbIdentify } from './javdb-api'
 
 /**
  * JavDB 插件：通过官方 App JSON API 刮削。
