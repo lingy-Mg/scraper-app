@@ -26,6 +26,9 @@ const buildItems = (
         { key: 'ai', label: 'AI 识别设置…' },
         { key: 'reloadPlugins', label: '重载插件' },
         { type: 'divider' },
+        { key: 'exportSettings', label: '导出设置…' },
+        { key: 'importSettings', label: '导入设置…' },
+        { type: 'divider' },
         { key: 'reimport', label: '重置并重新导入当前文件夹…' },
         { key: 'clearLibrary', label: '清空列表（不删除文件）…' },
         { key: 'quit', label: '退出' }

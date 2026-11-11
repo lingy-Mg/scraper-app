@@ -173,6 +173,22 @@ export interface Settings {
   blacklist?: string[]
 }
 
+/** `GET /api/settings/export` 返回的下载文件结构。 */
+export interface SettingsExportFile {
+  app: 'scraper'
+  version: number
+  exportedAt: string
+  includesSecrets: boolean
+  settings: Partial<Settings> & Record<string, unknown>
+}
+
+/** `POST /api/settings/import` 的响应；applied 为实际写入的字段名。 */
+export interface SettingsImportResult {
+  ok: true
+  settings: Settings
+  applied: string[]
+}
+
 /** 与 docs/providers-library-contract.md 保持一致。 */
 export interface LibraryItem {
   path: string

@@ -1404,3 +1404,18 @@ button {
   line-height: 1.7;
   margin-bottom: 8px;
 }
+
+.settings-transfer-hint {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+.settings-transfer-hint code {
+  font-family: var(--mono);
+  color: var(--text);
+}

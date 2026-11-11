@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { App as AntdApp, Checkbox, Input, Menu, Modal } from 'antd'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { App as AntdApp, Alert, Checkbox, Input, Menu, Modal } from 'antd'
 import type { Key } from 'react'
 import TitleBar from './components/TitleBar'
 import MenuBar from './components/MenuBar'
@@ -21,6 +21,7 @@ import BlacklistModal from './components/BlacklistModal'
 import FolderPickerModal from './components/FolderPickerModal'
 import LibraryModal from './components/LibraryModal'
 import ColumnSettingsModal from './components/ColumnSettingsModal'
+import SettingsExportModal from './components/SettingsExportModal'
 import { INITIAL_AI, INITIAL_MODES } from './data'
 import {
   fetchPlugins,
@@ -32,6 +33,7 @@ import {
 import { native, registerFolderPicker } from './native'
 import { useThemePreference } from './ThemeRoot'
 import { normalizeHiddenColumns } from './tableColumns'
+import { describeImportPayload } from './settingsTransfer'
 import type {
   AIConfig,
   AIIdentifyResult,
@@ -197,6 +199,7 @@ export default function ScraperApp() {
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([])
   const [columnsOpen, setColumnsOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [organizeOpen, setOrganizeOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
@@ -216,6 +219,7 @@ export default function ScraperApp() {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerInitial, setPickerInitial] = useState('')
   const pickerResolveRef = useRef<((path: string | null) => void) | null>(null)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
   const [task, setTask] = useState('空闲')
   const [hydrated, setHydrated] = useState(false)
   const [scan, setScan] = useState<ScanState>({
@@ -1776,6 +1780,91 @@ export default function ScraperApp() {
     })
   }
 
+  const exportSettings = async (includeSecrets: boolean) => {
+    try {
+      const data = await native.exportSettings(includeSecrets)
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json;charset=utf-8'
+      })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `scraper-settings-${data.exportedAt.replace(/[:.]/g, '-')}.json`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setExportOpen(false)
+      pushLog('info', includeSecrets ? '设置已导出（包含密钥，请妥善保管）' : '设置已导出（默认脱敏）')
+      message.success(includeSecrets ? '设置已导出（包含密钥）' : '设置已导出（不含密钥）')
+    } catch (error) {
+      pushLog('warn', `导出设置失败：${errText(error)}`)
+      message.error(`导出设置失败：${errText(error)}`)
+    }
+  }
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    let payload: unknown
+    try {
+      payload = JSON.parse(await file.text())
+    } catch {
+      message.error('导入文件不是有效的 JSON')
+      return
+    }
+
+    const summary = describeImportPayload(payload)
+    if (!summary.fields.length) {
+      message.error('文件中没有可识别的设置字段')
+      return
+    }
+
+    modal.confirm({
+      title: '导入设置',
+      width: 500,
+      content: (
+        <div>
+          <div>将合并以下字段，同名项覆盖本机设置：</div>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+            {summary.fields.map((field) => (
+              <li key={field}>{field}</li>
+            ))}
+          </ul>
+          <div className="settings-transfer-hint">
+            插件配置 data/config.json（含 JavDB 令牌）不受影响；导入完成后页面会自动重新加载。
+          </div>
+          {summary.includesSecrets ? (
+            <Alert
+              style={{ marginTop: 8 }}
+              type="warning"
+              showIcon
+              message="该文件包含密钥字段，导入后将覆盖本机对应密钥。"
+            />
+          ) : null}
+        </div>
+      ),
+      okText: '导入',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const result = await native.importSettings(payload)
+          // 防止卸载前仍有一次防抖保存把旧内存状态写回。
+          skipSaveRef.current = true
+          pushLog('info', `设置已导入：${result.applied.join('、') || '无字段变化'}`)
+          message.success('设置已导入，页面即将重新加载')
+          window.setTimeout(() => window.location.reload(), 800)
+        } catch (error) {
+          pushLog('warn', `导入设置失败：${errText(error)}`)
+          message.error(`导入设置失败：${errText(error)}`)
+          throw error
+        }
+      }
+    })
+  }
+
   const handleMenu = (key: string) => {
     switch (key) {
       case 'pick':
@@ -1807,6 +1896,16 @@ export default function ScraperApp() {
         break
       case 'reloadPlugins':
         void reloadPluginHost()
+        break
+      case 'exportSettings':
+        setExportOpen(true)
+        break
+      case 'importSettings':
+        if (task !== '空闲') {
+          message.warning('当前有任务进行中，请稍后再导入设置')
+          break
+        }
+        importInputRef.current?.click()
         break
       case 'selectAll':
         setSelected(visible.map((row) => row.uid))
@@ -1876,6 +1975,7 @@ export default function ScraperApp() {
         setBlacklistOpen(false)
         setLibraryOpen(false)
         setColumnsOpen(false)
+        setExportOpen(false)
         setPluginSettingsOpen(false)
         return
       }
@@ -1902,6 +2002,13 @@ export default function ScraperApp() {
 
   return (
     <div className="app">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={(event) => void handleImportFile(event)}
+      />
       <TitleBar subtitle={folder ? baseName(folder) : '未选择目录'} />
       <MenuBar
         onAction={handleMenu}
@@ -2016,6 +2123,11 @@ export default function ScraperApp() {
         open={libraryOpen}
         onClose={() => setLibraryOpen(false)}
         onOpenItem={(item) => void openLibraryItem(item)}
+      />
+      <SettingsExportModal
+        open={exportOpen}
+        onCancel={() => setExportOpen(false)}
+        onExport={exportSettings}
       />
       <ColumnSettingsModal
         open={columnsOpen}

@@ -20,6 +20,8 @@ import type {
   OrganizeResult,
   ScanProgress,
   Settings,
+  SettingsExportFile,
+  SettingsImportResult,
   SubtitleInfo,
   TrashResult
 } from './types'
@@ -183,6 +185,8 @@ export interface NativeBridge {
   trash(paths: string[]): Promise<TrashResult>
   loadSettings(): Promise<Settings>
   saveSettings(settings: Settings): Promise<void>
+  exportSettings(includeSecrets: boolean): Promise<SettingsExportFile>
+  importSettings(payload: unknown): Promise<SettingsImportResult>
   aiTest(config: AIConfig): Promise<AITestResult>
   aiIdentify(config: AIConfig, filename: string): Promise<AIIdentifyResult>
   aiPick(config: AIConfig, filename: string, candidates: Candidate[]): Promise<AIPickResult>
@@ -276,6 +280,16 @@ export const native: NativeBridge = {
 
   async saveSettings(settings) {
     await http<Settings>('/api/settings', { method: 'PUT', body: settings })
+  },
+
+  exportSettings(includeSecrets) {
+    return http<SettingsExportFile>(
+      `/api/settings/export?includeSecrets=${includeSecrets ? '1' : '0'}`
+    )
+  },
+
+  importSettings(payload) {
+    return http<SettingsImportResult>('/api/settings/import', { body: payload })
   },
 
   aiTest(config) {
