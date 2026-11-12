@@ -2,6 +2,12 @@
   "name": "scraper-app",
   "private": true,
   "version": "0.1.0",
+  "description": "本地影片元数据刮削与媒体库管理：Bun 单进程 + React 前端，浏览器访问",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lingy-Mg/scraper-app.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",

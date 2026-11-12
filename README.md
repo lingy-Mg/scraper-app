@@ -1,180 +1,209 @@
-# 刮削器（Scraper App）
+# 刮削器 · Scraper App
 
-本地影片刮削与媒体库管理应用，纯 B/S 单端：Bun 一个进程同时提供 API、插件与前端静态文件，浏览器访问。前端使用 **Vite + React 18 + TypeScript + Ant Design 5**。
+> 一个跑在自己电脑上的影片元数据刮削与媒体库管理工具。扫描本地目录，自动识别番号 / 片名，抓取封面、演员、简介，整理成 Emby / Jellyfin / Kodi 能直接识别的结构。
 
-## 为什么选 Ant Design
+**纯 B/S 单端**：一条命令启动 Bun 进程，它同时提供 API、插件运行时和前端页面，浏览器打开 `http://127.0.0.1:5174` 就能用。不需要安装客户端，不需要打包 exe，数据全部留在本机项目目录里。
 
-这个项目的界面核心是数据表格、弹窗、菜单、下拉、多选、紧凑密度和状态反馈，AntD 在这些方面最成熟：
+[![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Ant Design](https://img.shields.io/badge/Ant%20Design-5-1677ff?logo=antdesign&logoColor=white)](https://ant.design)
+[![Bun](https://img.shields.io/badge/Bun-1.3-fbf0df?logo=bun&logoColor=black)](https://bun.sh)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- `Table` 自带排序、行选择、固定列、虚拟滚动（配合 `scroll.y`）
-- `Modal` / `Menu` / `Select` / `InputNumber` / `Checkbox.Group` 开箱即用
-- `ConfigProvider` + `zh_CN` + `compactAlgorithm` 一行切换中文和紧凑密度
-- 中文文档完善，后续扩展不需要更换 UI 框架
+---
 
-## 启动
+## 它能做什么
+
+| | |
+|---|---|
+| **扫描** | 递归遍历目录，跳过隐藏目录、符号链接、非视频文件；两阶段进度（遍历 → 探测），大目录也不会看起来卡死 |
+| **识别** | JavDB / TMDB / Bangumi 三个内置刮削源，按番号或片名精确匹配；匹配不到时可由 AI 兜底 |
+| **选择** | 多候选进入「待选择」，可让 AI 按置信度自动挑选，也可以手动匹配、按标题搜索 |
+| **整理** | 移动 / 复制到目标目录，按模板重命名，写入 NFO + 封面，冲突可选跳过 / 覆盖 / 自动重命名 |
+| **媒体库** | SQLite 持久化，重启恢复；支持来源管理、重复检测、按模式分别统计与清空 |
+| **清理** | 短片（疑似广告）默认隐藏，可一键批量移入系统回收站 —— 只进回收站，永不永久删除 |
+
+## 界面
+
+- 数据表格：列宽 / 列显隐 / 紧凑密度可调，状态、封面、番号、片商、演员、时长、评分一屏可见
+- 详情弹窗：完整封面、简介、磁力列表；封面支持手动框选裁剪，裁剪区域会随整理一起写入
+- 日志面板：默认展开、可拖动高度，实时显示扫描与整理进度
+- 网页内目录选择器：直接在页面里浏览磁盘真实路径，不弹系统对话框
+- 深浅色主题跟随系统，可手动切换
+
+## 技术栈
+
+| 层 | 选型 |
+|---|---|
+| 前端 | React 18 · Vite 5 · TypeScript · Ant Design 5 |
+| 后端 | Bun（`Bun.serve`、`bun:sqlite`、`Bun.build`），单进程托管 `dist/` 与 API |
+| 数据 | SQLite 媒体库 + 项目内 `data/` 目录（设置、封面缓存、插件配置） |
+| 测试 | `bun test` 单元测试 · HTTP 冒烟 · Playwright 浏览器端到端 |
+
+选 Ant Design 的理由很实际：这个应用的核心是表格、弹窗、下拉、多选、紧凑密度和状态反馈，AntD 在这几件事上最省事，`ConfigProvider` + `zh_CN` + `compactAlgorithm` 一行就能切中文和紧凑布局。
+
+## 快速开始
+
+环境要求：**Bun 1.3+**、**Node 20+**（仅构建与脚本使用）、Windows 10/11。
 
 ```bash
+git clone https://github.com/lingy-Mg/scraper-app.git
+cd scraper-app
+
 npm install
-npm run dev          # Bun API(5174) + Vite 前端(5173)，开发热更
-npm run dev:server   # 只启动 Bun 服务 http://127.0.0.1:5174
-npm run dev:ui       # 只启动前端 http://127.0.0.1:5173
-npm run build        # 类型检查 + 生产构建（dist/）
-npm run start        # 单进程生产启动并打开浏览器
+npm run dev      # 开发：Bun API(5174) + Vite(5173)，改代码热更
+
+npm run build    # 类型检查 + 生产构建 → dist/
+npm run start    # 生产：单进程托管 dist + API，并打开浏览器
 ```
 
-> `npm run dev` 会同时拉起 `bun --watch server/index.ts` 和 Vite，Vite 代理 `/api`、`/plugins`、`/ws`。
-> `npm run start` 由 Bun 同时托管 `dist/` 与 API，只监听 `127.0.0.1`。
+`npm run start` 只监听 `127.0.0.1`，不对外暴露。生产模式不需要 Node 的 dev server，Bun 一个进程就是完整应用。
 
-## 目录
+> 第一次打开是空列表：先点「选择文件夹」添加媒体来源，再执行扫描。
 
+### 常用命令
+
+```bash
+npm run dev:server   # 只启动 Bun 服务
+npm run dev:ui       # 只启动前端
+bun test             # 单元测试（临时目录隔离、不联网）
+bun run smoke        # HTTP 端到端冒烟
+bun run check        # 一键自检：tsc → bun build → bun test → vite build
+npm run e2e          # Playwright 浏览器端到端（首次需 npx playwright install chromium）
 ```
+
+## 使用流程
+
+```text
+选择目录 → 扫描（walk / probe）→ 识别（JavDB / TMDB / Bangumi）
+        → 插件或 AI 兜底 → 候选选择 → 写入媒体库
+        → 预览整理结果 → 移动 + 重命名 + NFO / 封面
+```
+
+1. **添加来源**：网页内目录选择器浏览并添加扫描根目录。
+2. **扫描**：实时增量显示文件，边扫描边显示进度。
+3. **刮削**：按当前模式（插件）识别；单个文件失败不会中断整批，可单独重试。
+4. **核对**：多候选进入待选择，详情弹窗可查看封面、简介、磁力，必要时手动匹配。
+5. **整理**：先预览目标路径，确认后执行；每一步都有日志，失败会写明原因。
+6. **清理**：短片批量移入回收站。
+
+## 配置
+
+所有设置都在页面里改，落盘到 `data/settings.json`：
+
+- **TMDB**：填 v3 API Key 或 v4 Token（电影 / 电视剧）
+- **Bangumi**：Token 可选，只影响限额（动漫）
+- **JavDB**：需要用户自己在插件设置里填 Token，程序不内置账号
+- **AI**：OpenAI 兼容接口（DeepSeek / OpenAI / 通义千问 / Ollama / OpenCode API），也支持直接调用本机 `opencode` CLI，无需 API Key
+
+密钥只保存在本机 `data/settings.json`，不会写日志、不会进仓库；界面按密码框显示，导出设置时自动脱敏。
+
+## 数据目录
+
+运行时数据**只写项目根目录的 `data/`**，不会写入 `%APPDATA%` 或任何用户目录：
+
+```text
+data/
+├─ settings.json     # 设置与密钥
+├─ library.db        # SQLite 媒体库
+├─ covers/           # 封面缓存
+├─ plugins/<id>/     # 用户插件（同 id 覆盖内置）
+└─ .plugin-cache/    # 插件热重载的打包缓存
+```
+
+`data/` 已在 `.gitignore` 中。测试通过 `SCRAPER_DATA_DIR` 注入临时目录，不会碰真实数据。
+
+## 目录结构
+
+```text
 scraper-app/
-├─ src/                     # 前端宿主
-│  ├─ App.tsx
-│  ├─ api.ts                # 插件宿主 API 客户端
-│  ├─ theme.ts
-│  ├─ styles.css
+├─ src/                  # 前端：表格、弹窗、任务队列、HTTP 桥接
+│  ├─ native.ts          # 唯一后端通道（同源 HTTP）
 │  └─ components/
-│     ├─ TitleBar / MenuBar / Toolbar / ModeBar
-│     ├─ FilterBar / FileTable / StatusBar / LogPanel
-│     ├─ PluginSettingsModal # iframe 嵌入插件设置页
-│     └─ OrganizeModal / ConfigModal / AIConfigModal / CandidateModal
-├─ server/                  # Bun 单进程后端
-│  ├─ index.ts              # HTTP + WS + 插件资源 + dist 静态托管
-│  ├─ registry.ts           # 插件发现 / 热重载 / 配置持久化
-│  ├─ javdb.ts              # JavDB App API 客户端（签名/搜索/详情/磁力）
-│  ├─ library.ts            # SQLite 媒体库
-│  ├─ providers/
-│  │  ├─ tmdb.ts            # 电影 / 电视剧
-│  │  └─ bangumi.ts         # 动漫
+├─ server/               # Bun 单进程后端
+│  ├─ index.ts           # HTTP 路由 + 静态托管 + SPA fallback
+│  ├─ scan.ts            # 扫描 / ffprobe / 时长解析
+│  ├─ files.ts           # 整理 / NFO / 封面 / 回收站
+│  ├─ library.ts         # SQLite 媒体库
+│  ├─ registry.ts        # 插件发现 / 热重载 / 配置
+│  ├─ ai.ts              # AI 识别与回退
 │  └─ plugins/
-│     ├─ av/{plugin.json,index.ts}
-│     ├─ javdb/{plugin.json,index.ts}
-│     ├─ movie/…  tv/…  anime/…
-│     └─ _shared/{simple.ts,settings.html}
-├─ scripts/                 # dev.mjs（Vite + Bun）/ start.mjs（单进程生产）
-├─ docs/architecture.md     # 完整架构设计
-└─ package.json
+│     ├─ _shared/        # 共享类型与插件骨架
+│     ├─ av/ javdb/      # AV 模式（JavDB App API）
+│     └─ movie/ tv/ anime/
+├─ scripts/              # dev / start / check / smoke
+├─ test/  e2e/           # 单元测试 + Playwright
+├─ docs/                 # 契约、架构、交接文档
+└─ data/                 # 运行时数据（gitignore）
 ```
 
 ## 插件系统
 
-模式 = 插件。每个插件声明 manifest、提供刮削脚本，并可自带设置页：
+**模式即插件**。新增一个刮削站 = 新增一个插件目录，不改主程序。
 
-```json
-{
-  "id": "av",
-  "name": "AV",
-  "version": "1.0.0",
-  "apiVersion": 1,
-  "labels": { "code": "番号", "title": "标题" },
-  "defaults": {
-    "sources": [{ "label": "JavDB", "on": true }],
-    "naming": "{片商}/{年份}/{番号} {标题}",
-    "organize": "{片商}/{年份}/{番号} {标题}"
-  }
-}
+```text
+server/plugins/<id>/
+├─ plugin.json     # manifest：id / name / version / apiVersion / labels / defaults
+└─ index.ts        # export default { identify(ctx), resolve(ctx) }
 ```
 
 ```ts
-// server/plugins/av/index.ts
 export default {
-  async identify({ filename }) {
-    // 返回 Candidate[]
+  async identify({ filename, code, config }) {
+    // 返回 Candidate[]：{ id, title, code, posterUrl, ... }
+  },
+  async resolve({ id, config }) {
+    // 返回详情：演员、简介、磁力等
   }
 }
 ```
 
-- Bun 用 `import(...?v=timestamp)` 加载，`fs.watch` 监听目录，改完脚本自动重载
-- 设置页由插件提供，Bun 托管在 `/plugins/<id>/settings/`，宿主用 iframe 嵌入
-- 插件没有设置页时回退到 `_shared/settings.html`
-- 前端通过 `GET /api/plugins` 动态生成模式切换器，不再写死 AV/电影/电视剧/动漫
+- 通过 `GET /api/plugins` 动态注册，前端模式切换器完全由插件列表生成
+- `fs.watch` 监听目录，改完插件自动热重载（经 `Bun.build` 打包后重新 import，传递依赖同样失效）
+- 插件可自带设置页，托管在 `/plugins/<id>/settings/`，宿主用 iframe 嵌入
+- 单个插件抛错不影响进程
+- 用户插件放 `data/plugins/<id>/`，同 id 覆盖内置版本
 
-设置页与宿主通过 `postMessage` 通信：
+完整契约见 [docs/plugin-contract.md](docs/plugin-contract.md)。
 
-```text
-plugin:ready  →  host:init(config)
-plugin:saved  →  宿主刷新配置
-plugin:close  →  关闭弹窗
+## 测试
+
+```bash
+bun test          # 92 个单元测试：扫描、整理、媒体库、设置、插件
+bun run smoke     # 随机端口 + 临时数据目录，真实 HTTP 链路
+npm run e2e       # Playwright：启动 → 扫描 → 队列暂停/取消
 ```
 
-完整设计见 [docs/architecture.md](docs/architecture.md)。
+约束：单元与冒烟测试必须使用 `mkdtemp` 临时目录（`SCRAPER_DATA_DIR`），e2e 使用项目内 `.tmp/`，不联网、不读写真实 `data/`。
 
-## 已实现（真实后端）
+## 已知限制
 
-### 后端能力（Bun）
+- **回收站删除目前仅 Windows**：走 `SHFileOperation`，单 PowerShell 进程批量处理；扫描 / 整理 / 刮削跨平台可用
+- **ffprobe 可选**：未安装时 MP4/MOV 用内置 `moov/mvhd` 解析，其他容器时长为空；把 `ffprobe` 放进 PATH 即可启用
+- **JavDB 接口随时可能变化**：内置插件使用对方 App 的公开接口，签名与字段可能随版本调整；需要用户自备 Token，程序不做任何绕过
+- **TMDB / Bangumi 需要自备凭据**，未填时会明确提示而非静默失败
+- **未实现**：磁力下载、预告片 / 字幕自动下载、跨设备同步
 
-- 目录扫描：递归、跳过隐藏目录、视频扩展名过滤、单文件探测
-- 时长读取：MP4/MOV 直接解析 `moov/mvhd`（不依赖外部程序），其余交给 ffprobe；找不到 ffprobe 时自动降级
-- 视频元数据：ffprobe 同时读取宽高与编码
-- 文件整理：移动 / 复制、目标越界校验、`跳过 / 覆盖 / 自动重命名` 冲突策略、跨卷复制校验、清理空源目录
-- 删除：系统回收站；单 PowerShell 进程批量处理，失败自动逐条回退并返回原因
-- 打开文件 / 在资源管理器中定位
-- 网页内目录选择器：`/api/fs/roots`、`/api/fs/list` 浏览真实路径，不调用系统对话框
-- 设置持久化：`data/settings.json`，原子写入
-- AI 代理：后端直连 OpenAI 兼容接口，Key 只在本机，不经浏览器
+## 免责声明
 
-### 刮削流程
+本项目仅用于整理**你自己合法拥有**的媒体文件的元数据与文件结构。
 
-- **JavDB App API**：真实番号搜索、详情、演员、片商、评分、封面、时长、磁力；AV / JavDB 两个模式共用同一客户端（`server/javdb.ts`）
-- **AV 只按番号识别**：文件名没有番号时不做标题模糊搜索；手动匹配才允许标题搜索
-- **TMDB**：电影 / 电视剧搜索、详情、演员、片商、类型、时长、评分、封面；支持 v3 Key 与 v4 Token
-- **Bangumi**：动漫搜索、详情、评分、标签、封面；支持可选 Token
-- **SQLite 媒体库**：扫描/刮削结果自动入库，重启后恢复记录与模式，支持清空当前模式记录
-- 精确匹配策略：番号大小写/分隔符等价且唯一才采用，绝不回退到搜索首项
-- 扫描 → 数据源（TMDB / Bangumi / JavDB）→ 插件 / AI 回退 → 单结果直接采用 → 多结果进入「待选择」→ AI 自动选择（阈值可调）→ 手动确认
-- **短片默认隐藏**：小于「清理时长」阈值的视频默认不显示（疑似广告），筛选栏可一键显示/隐藏；时长为 0 的文件不会被误判为短片
-- **清空列表 / 重新导入**：清空列表会清空全部媒体库记录并取消文件夹选择（不删文件）；重新导入会清空记录后重扫当前文件夹；重新选择文件夹会替换当前列表
-- **扫描过滤**：跳过隐藏目录、符号链接、非视频文件与 TypeScript 声明文件（`.d.ts`）
-- 海报：列表缩略图、候选列表、详情弹窗都显示真实封面，加载失败回退渐变占位
-- NFO：整理时按 Emby/Jellyfin/Kodi 兼容格式写入同名 `.nfo`，封面写入同名图片（自动解 XOR；默认保存完整封面，需要时可在详情弹窗手动裁剪）
-- 「无法刮削」独立筛选，行内「AI 识别」、右键「重新刮削 / 手动匹配」
-- 短片检测与批量清理（回收站语义）；清理弹窗会列出文件、时长与大小，可全选或单选后清理
-- 日志面板默认展开，可拖动上边缘调整高度，展开状态与高度会持久化
-- 整理前预览、整理后逐项日志与失败原因
-- 状态栏显示真实任务状态、视频数、大小、ffprobe 可用性
+- 刮削数据（简介、封面、评分等）版权归各来源站点所有，本项目仅做本地缓存与展示
+- 请遵守目标站点的服务条款与当地法律法规，不要用于批量抓取、二次分发或任何商业用途
+- 作者不对使用本项目造成的任何后果负责
 
-### AI
+## 文档
 
-- DeepSeek / OpenAI 兼容 / 通义千问 / Ollama 本地 / **OpenCode API** / **OpenCode CLI** / 自定义
-- **OpenCode API**：OpenCode Console / Go 的 OpenAI 兼容接口；Base URL 填 `https://opencode.ai/inference/go/openai/v1`（Go）或 `https://opencode.ai/inference/openai/v1`（余额），API Key 在 Console 创建
-- **OpenCode CLI**：直接调用本机 `opencode run`，无需 API Key；模型填 `provider/model`（如 `opencode-go/deepseek-v4.1-flash`），使用本机已登录账号
-- 测试连接走真实请求并显示延迟
-- 识别测试显示真实耗时与「模型 / 本地正则回退」来源
-- 模型返回 JSON 解析失败、超时、非 2xx 时按配置回退本地正则
-- 多候选择优返回 `{pick, confidence, reason}`，低于阈值不替用户决定
+| 文档 | 内容 |
+|---|---|
+| [AGENTS.md](AGENTS.md) | 给 AI / 开发者的入口：命令、架构、硬性约束、已知坑 |
+| [docs/architecture.md](docs/architecture.md) | 完整架构设计 |
+| [docs/plugin-contract.md](docs/plugin-contract.md) | 插件契约 |
+| [docs/bridge-contract.md](docs/bridge-contract.md) | 前端 ↔ Bun 接口契约 |
+| [docs/providers-library-contract.md](docs/providers-library-contract.md) | 数据源与媒体库字段契约 |
+| [docs/AI_HANDOFF.md](docs/AI_HANDOFF.md) | 交接状态 |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 路线图与待办 |
 
-### 运行方式
+## License
 
-| 环境 | 走法 | 说明 |
-|---|---|---|
-| `npm run dev` | Vite 5173 → 代理 Bun 5174 | 开发热更，全功能 |
-| `npm run start` | Bun 5174 同源托管 dist + API | 生产单进程，全功能 |
-
-### 快捷键
-
-`Ctrl+A` 全选、`Ctrl+M` 整理、`Delete` 删除、`F5` 重新扫描、`Esc` 关闭弹层。
-
-## 已知边界
-
-- **ffprobe 为可选依赖**：未安装时 MP4/MOV 用内置解析，其他容器时长为空。把 `ffprobe.exe` 放到项目 `binaries/` 或 PATH 即可启用。
-- **TMDB 需要 API Key**：在「配置…」中填写 v3 Key 或 v4 Token；未填写时电影/电视剧会明确提示，不会静默失败。
-- **Bangumi 可匿名**：Token 可选，只影响限额。
-- **单进程运行**：`npm run start` 启动后 Bun 常驻；自定义插件从 `server/plugins/` 动态加载，支持热重载。
-- **JavDB 签名随 App 版本变化**：常量对应 App 1.9.28，失效时更新 `server/javdb.ts` 即可。
-- **未实现**：磁力链接下载、预告片/字幕下载、媒体库跨设备同步。
-- **AI Key 仅本机**：保存在设置文件中，不会上传；界面上按密码框显示。
-
-## 运行与交付
-
-```powershell
-npm run build   # 生成 dist/
-npm run start   # Bun 单进程托管 dist + API，并打开 http://127.0.0.1:5174
-```
-
-- 不生成 exe/安装包；服务只监听 `127.0.0.1`
-- OpenCode CLI 功能要求 `opencode` 在 PATH 中
-
-## 接口契约
-
-前端与 Bun 的字段和接口约定见 [docs/bridge-contract.md](docs/bridge-contract.md)，媒体库与 TMDB/Bangumi 的接口见 [docs/providers-library-contract.md](docs/providers-library-contract.md)。后续开发请看 [AGENTS.md](AGENTS.md) 与 [docs/AI_HANDOFF.md](docs/AI_HANDOFF.md)。
+[MIT](LICENSE)
